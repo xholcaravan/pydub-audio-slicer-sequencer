@@ -8,6 +8,9 @@ from pydub.effects import normalize
 import pandas as pd
 import os
 import argparse
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import sys
 
 # Hardcoded parameters
 SLICE_SIZE = 30  # seconds
@@ -239,9 +242,254 @@ def verify_files_vs_excel(blocks_dir, excel_path):
         print("❌ Excel file not found - cannot verify")
     except Exception as e:
         print(f"❌ Error during verification: {e}")
+
+def select_audio_file():
+    """Let user select audio file and return its path"""
+    root = tk.Tk()
+    root.withdraw()
+    
+    audio_file = filedialog.askopenfilename(
+        title="Select Audio File",
+        filetypes=[
+            ("Audio files", "*.wav *.mp3 *.flac *.aiff *.aac *.ogg *.m4a"),
+            ("All files", "*.*")
+        ]
+    )
+    root.destroy()
+    return audio_file
+
+def get_corresponding_txt_file(audio_file):
+    """Get the corresponding txt file path based on audio file name"""
+    if not audio_file:
+        return None
+    
+    # Replace audio extension with .txt
+    base_name = os.path.splitext(audio_file)[0]
+    txt_file = base_name + '.txt'
+    
+    return txt_file
+
+def verify_files_exist(audio_file, txt_file):
+    """Verify both audio and text files exist"""
+    if not audio_file:
+        print("No audio file selected. Exiting.")
+        return False
+    
+    if not os.path.exists(audio_file):
+        print(f"Error: Audio file not found: {audio_file}")
+        return False
+    
+    if not os.path.exists(txt_file):
+        print(f"Error: Text file not found: {txt_file}")
+        print(f"Please create a text file named: {os.path.basename(txt_file)}")
+        print("in the same folder as your audio file.")
+        return False
+    
+    return True
+
+def select_output_folder():
+    """Let user select output folder for slices"""
+    root = tk.Tk()
+    root.withdraw()
+    output_folder = filedialog.askdirectory(title="Select Output Folder for Slices")
+    root.destroy()
+    return output_folder
+
+def select_audio_file():
+    """Let user select audio file and return its path"""
+    root = tk.Tk()
+    root.withdraw()
+    
+    audio_file = filedialog.askopenfilename(
+        title="Select Audio File",
+        filetypes=[
+            ("Audio files", "*.wav *.mp3 *.flac *.aiff *.aac *.ogg *.m4a"),
+            ("All files", "*.*")
+        ]
+    )
+    root.destroy()
+    return audio_file
+
+def get_corresponding_txt_file(audio_file):
+    """Get the corresponding txt file path based on audio file name"""
+    if not audio_file:
+        return None
+    
+    # Replace audio extension with .txt
+    base_name = os.path.splitext(audio_file)[0]
+    txt_file = base_name + '.txt'
+    
+    return txt_file
+
+def verify_files_exist(audio_file, txt_file):
+    """Verify both audio and text files exist"""
+    if not audio_file:
+        print("No audio file selected. Exiting.")
+        return False
+    
+    if not os.path.exists(audio_file):
+        print(f"Error: Audio file not found: {audio_file}")
+        return False
+    
+    if not os.path.exists(txt_file):
+        audio_filename = os.path.basename(audio_file)
+        txt_filename = os.path.basename(txt_file)
         
+        print(f"Error: Text file not found: {txt_file}")
+        print("\nTo create the required text file:")
+        print(f"1. Open {audio_filename} in Audacity")
+        print("2. Add labels at the climax points you want to slice")
+        print("3. Export labels: File → Export → Export Labels...")
+        print(f"4. Save as: {txt_filename}")
+        print("5. Run this program again")
+        return False
+    
+    return True
+
+def select_output_folder():
+    """Let user select output folder for slices"""
+    root = tk.Tk()
+    root.withdraw()
+    output_folder = filedialog.askdirectory(title="Select Output Folder for Slices")
+    root.destroy()
+    return output_folder
+
 def main():
-    # Define paths
+    print("=== Audio Slicer Started ===")
+    print(f"Slice size: {SLICE_SIZE} seconds")
+    print(f"Fade duration: {FADE_DURATION} seconds")
+    print()
+    
+    # Select audio file
+    print("Please select the audio file to slice...")
+    audio_file = select_audio_file()
+    
+    # Get corresponding txt file
+    txt_file = get_corresponding_txt_file(audio_file)
+    
+    # Verify files exist
+    if not verify_files_exist(audio_file, txt_file):
+        return
+    
+    # Select output folder
+    print("Please select output folder for slices...")
+    blocks_dir = select_output_folder()
+    
+    if not blocks_dir:
+        print("No output folder selected. Exiting.")
+        return
+    
+    excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
+    
+    print(f"Audio file: {audio_file}")
+    print(f"Text file: {txt_file}")
+    print(f"Output directory: {blocks_dir}")
+    print()
+    
+    # Parse audio.txt
+    print("Parsing audio.txt...")
+    slices = parse_audio_txt(txt_file)
+    if not slices:
+        print("No valid slices found in audio.txt")
+        return
+    
+    print(f"Found {len(slices)} slices to process")
+    for i, slice_info in enumerate(slices, 1):
+        print(f"  {i}. {slice_info['type']} at {slice_info['climax_time']}s: {slice_info['description']}")
+    print()
+    
+    # Get next file numbers from Excel
+    next_m, next_v = get_next_file_numbers(excel_path)
+    print(f"Next file numbers - m: {next_m}, v: {next_v}")
+    print()
+    
+    # Load audio file
+    print("Loading audio file...")
+    try:
+        audio = AudioSegment.from_file(audio_file)
+        print(f"Audio loaded: {len(audio)/1000:.2f} seconds")
+    except Exception as e:
+        print(f"Error loading audio file: {e}")
+        return
+    
+    # Process each slice
+    print("\nProcessing slices...")
+    for slice_info in slices:
+        # Determine file number based on type
+        if slice_info['type'] == 'm':
+            file_number = next_m
+            next_m += 1
+        elif slice_info['type'] == 'v':
+            file_number = next_v
+            next_v += 1
+        else:
+            print(f"Warning: Unknown type '{slice_info['type']}', skipping")
+            continue
+        
+        # Process the slice
+        output_path = process_audio_slice(audio, slice_info, blocks_dir, file_number)
+        if output_path:
+            # Update Excel file
+            update_excel_file(excel_path, slice_info, file_number, output_path, audio_file)
+        print()
+    
+    # Verify files vs Excel database
+    verify_files_vs_excel(blocks_dir, excel_path)
+    
+    print("=== Audio Slicer Completed ===")    # Initialize tkinter (hidden root window)
+    root = tk.Tk()
+    root.withdraw()  # Hide the main window
+    
+    print("=== Audio Slicer Started ===")
+    print(f"Slice size: {SLICE_SIZE} seconds")
+    print(f"Fade duration: {FADE_DURATION} seconds")
+    print()
+    
+    # Let user select audio file
+    print("Please select the audio file to slice...")
+    audio_file = filedialog.askopenfilename(
+        title="Select Audio File",
+        filetypes=[
+            ("Audio files", "*.wav *.mp3 *.flac *.aiff *.aac *.ogg *.m4a"),
+            ("All files", "*.*")
+        ]
+    )
+    
+    if not audio_file:
+        print("No audio file selected. Exiting.")
+        return
+    
+    # Let user select text file with slice definitions
+    print("Please select the text file with slice definitions...")
+    txt_file = filedialog.askopenfilename(
+        title="Select Slice Definitions File",
+        filetypes=[
+            ("Text files", "*.txt"),
+            ("All files", "*.*")
+        ]
+    )
+    
+    if not txt_file:
+        print("No text file selected. Exiting.")
+        return
+    
+    # Let user select output folder
+    print("Please select output folder for slices...")
+    blocks_dir = filedialog.askdirectory(title="Select Output Folder")
+    
+    if not blocks_dir:
+        print("No output folder selected. Exiting.")
+        return
+    
+    excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
+    
+    print(f"Audio file: {audio_file}")
+    print(f"Text file: {txt_file}")
+    print(f"Output directory: {blocks_dir}")
+    print()
+    
+    # Rest of your main function remains the same...
+    # Remove the old path definitions and file existence checks    # Define paths
     base_dir = os.path.dirname(os.path.abspath(__file__))
     raw_audio_dir = os.path.join(base_dir, "raw audio")
     blocks_dir = os.path.join(base_dir, "blocks")
