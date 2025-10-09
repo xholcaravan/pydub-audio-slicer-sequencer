@@ -354,8 +354,42 @@ def select_output_folder():
     root.destroy()
     return output_folder
 
-def main():
+def show_welcome_screen():
+    """Display welcome message and program description"""
+    welcome_text = """
+╔══════════════════════════════════════════════════════════════╗
+║                 pydub-audio-slicer-sequencer                 ║
+║                     Audio Processing Tool                    ║
+╚══════════════════════════════════════════════════════════════╝
+
+Use this tool to:
+1 - Slice an audio file into several blocks
+2 - Sequence blocks to create an audio file
+
+Option 1 will:
+• Extract 30-second audio segments centered on climax points
+• Apply fade in/out and normalization  
+• Track all slices in an Excel database
+• Maintain file organization and verification
+
+Option 2 will:
+• Sequence 30-second audio segments centered on climax points
+"""
+    print(welcome_text)
+    
+    while True:
+        choice = input("Select option (1 or 2): ").strip()
+        if choice in ['1', '2']:
+            return choice
+        else:
+            print("Invalid choice. Please enter 1 or 2.")
+
+    # Show welcome screen
+    show_welcome_screen()
+    
     print("=== Audio Slicer Started ===")
+    print(f"Slice size: {SLICE_SIZE} seconds")
+    # ... rest of your main function remains the same    print("=== Audio Slicer Started ===")
     print(f"Slice size: {SLICE_SIZE} seconds")
     print(f"Fade duration: {FADE_DURATION} seconds")
     print()
@@ -569,6 +603,100 @@ def main():
     verify_files_vs_excel(blocks_dir, excel_path)
     
     print("=== Audio Slicer Completed ===")
+
+def run_audio_slicer():
+    """Run the audio slicing functionality"""
+    print("=== Audio Slicer Started ===")
+    print(f"Slice size: {SLICE_SIZE} seconds")
+    print(f"Fade duration: {FADE_DURATION} seconds")
+    print()
+    
+    # Select audio file
+    print("Please select the audio file to slice...")
+    audio_file = select_audio_file()
+    
+    # Get corresponding txt file
+    txt_file = get_corresponding_txt_file(audio_file)
+    
+    # Verify files exist
+    if not verify_files_exist(audio_file, txt_file):
+        return
+    
+    # Select output folder
+    print("Please select output folder for slices...")
+    blocks_dir = select_output_folder()
+    
+    if not blocks_dir:
+        print("No output folder selected. Exiting.")
+        return
+    
+    excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
+    
+    print(f"Audio file: {audio_file}")
+    print(f"Text file: {txt_file}")
+    print(f"Output directory: {blocks_dir}")
+    print()
+    
+    # Parse audio.txt
+    print("Parsing audio.txt...")
+    slices = parse_audio_txt(txt_file)
+    if not slices:
+        print("No valid slices found in audio.txt")
+        return
+    
+    print(f"Found {len(slices)} slices to process")
+    for i, slice_info in enumerate(slices, 1):
+        print(f"  {i}. {slice_info['type']} at {slice_info['climax_time']}s: {slice_info['description']}")
+    print()
+    
+    # Get next file numbers from Excel
+    next_m, next_v = get_next_file_numbers(excel_path)
+    print(f"Next file numbers - m: {next_m}, v: {next_v}")
+    print()
+    
+    # Load audio file
+    print("Loading audio file...")
+    try:
+        audio = AudioSegment.from_file(audio_file)
+        print(f"Audio loaded: {len(audio)/1000:.2f} seconds")
+    except Exception as e:
+        print(f"Error loading audio file: {e}")
+        return
+    
+    # Process each slice
+    print("\nProcessing slices...")
+    for slice_info in slices:
+        # Determine file number based on type
+        if slice_info['type'] == 'm':
+            file_number = next_m
+            next_m += 1
+        elif slice_info['type'] == 'v':
+            file_number = next_v
+            next_v += 1
+        else:
+            print(f"Warning: Unknown type '{slice_info['type']}', skipping")
+            continue
+        
+        # Process the slice
+        output_path = process_audio_slice(audio, slice_info, blocks_dir, file_number)
+        if output_path:
+            # Update Excel file
+            update_excel_file(excel_path, slice_info, file_number, output_path, audio_file)
+        print()
+    
+    # Verify files vs Excel database
+    verify_files_vs_excel(blocks_dir, excel_path)
+    
+    print("=== Audio Slicer Completed ===")
+
+def main():
+    choice = show_welcome_screen()
+    
+    if choice == '1':
+        run_audio_slicer()  # This runs the actual slicer
+    elif choice == '2':
+        print("Sequencing feature - Under construction")
+        return
 
 if __name__ == "__main__":
     main()
