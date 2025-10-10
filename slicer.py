@@ -14,10 +14,12 @@ import sys
 from colorama import Fore, Back, Style, init
 # Initialize colorama (this makes colors work on Windows too)
 init()
+import random
 
 # Hardcoded parameters
 SLICE_SIZE = 30  # seconds
 FADE_DURATION = SLICE_SIZE / 2  # seconds
+
 
 def parse_audio_txt(file_path):
     """Parse the audio.txt file and return list of slices"""
@@ -312,6 +314,7 @@ def select_output_folder():
     root.destroy()
     return output_folder
 
+
 def show_welcome_screen():
     """Display welcome message and program description"""
     welcome_text = f"""
@@ -365,7 +368,39 @@ def show_slice_and_sequence_menu():
         else:
             print(f"{Fore.RED}❌ Invalid choice. Please enter 1 or 2.{Style.RESET_ALL}")
 
-def run_audio_slicer():
+def show_slice_options_menu():
+    """Show submenu for slicing options"""
+    submenu_text = f"""
+{Fore.CYAN}Slicing Options:{Style.RESET_ALL}
+{Fore.GREEN}1 - I have a label file I obtained from Audacity{Style.RESET_ALL}
+{Fore.YELLOW}2 - I don't have a label file{Style.RESET_ALL}
+"""
+    print(submenu_text)
+    
+    while True:
+        sub_choice = input(f"{Fore.WHITE}Select option (1 or 2): {Style.RESET_ALL}").strip()
+        if sub_choice in ['1', '2']:
+            return sub_choice
+        else:
+            print(f"{Fore.RED}❌ Invalid choice. Please enter 1 or 2.{Style.RESET_ALL}")
+
+def show_no_labels_menu():
+    """Show options when user doesn't have labels"""
+    submenu_text = f"""
+{Fore.CYAN}No Label File Options:{Style.RESET_ALL}
+{Fore.GREEN}1 - I will label my audio file in Audacity{Style.RESET_ALL}
+{Fore.YELLOW}2 - I just want to randomly slice my audio file{Style.RESET_ALL}
+"""
+    print(submenu_text)
+    
+    while True:
+        choice = input(f"{Fore.WHITE}Select option (1 or 2): {Style.RESET_ALL}").strip()
+        if choice in ['1', '2']:
+            return choice
+        else:
+            print(f"{Fore.RED}❌ Invalid choice. Please enter 1 or 2.{Style.RESET_ALL}")
+
+def run_audio_slicer_with_labels():
     """Run the audio slicing functionality"""
     print(f"{Fore.CYAN}=== Audio Slicer Started ==={Style.RESET_ALL}")
     print(f"Slice size: {SLICE_SIZE} seconds")
@@ -450,21 +485,184 @@ def run_audio_slicer():
     
     print(f"{Fore.CYAN}=== Audio Slicer Completed ==={Style.RESET_ALL}")
 
+def calculate_slice_density(audio_duration_seconds):
+    """Calculate number of slices based on audio duration (~1 per 2 minutes)"""
+    base_slices = audio_duration_seconds / 120  # 1 slice per 2 minutes
+    # Add some variation (80% to 120% of base)
+    variation = random.uniform(0.8, 1.2)
+    num_slices = max(1, int(base_slices * variation))
+    return num_slices
+
+def get_next_file_numbers_from_folder(blocks_dir):
+    """Get next file numbers by scanning existing m and v files in folder"""
+    try:
+        if not os.path.exists(blocks_dir):
+            return 1, 1
+        
+        all_files = os.listdir(blocks_dir)
+        m_files = [f for f in all_files if f.startswith('m') and f[1:].split('.')[0].isdigit()]
+        v_files = [f for f in all_files if f.startswith('v') and f[1:].split('.')[0].isdigit()]
+        
+        # Extract numbers and find maximums
+        m_numbers = [int(f[1:].split('.')[0]) for f in m_files if f[1:].split('.')[0].isdigit()]
+        v_numbers = [int(f[1:].split('.')[0]) for f in v_files if f[1:].split('.')[0].isdigit()]
+        
+        next_m = max(m_numbers) + 1 if m_numbers else 1
+        next_v = max(v_numbers) + 1 if v_numbers else 1
+        
+        return next_m, next_v
+        
+    except Exception as e:
+        print(f"{Fore.YELLOW}⚠️  Error scanning folder, starting from 1: {e}{Style.RESET_ALL}")
+        return 1, 1
+
+def generate_random_labels(audio_file):
+    """Generate random slice positions throughout the audio file with proper density"""
+    try:
+        print(f"{Fore.BLUE}Loading audio to calculate duration...{Style.RESET_ALL}")
+        # Load audio to get duration
+        audio = AudioSegment.from_file(audio_file)
+        duration_seconds = len(audio) / 1000
+        print(f"{Fore.GREEN}✅ Audio duration: {duration_seconds:.1f} seconds{Style.RESET_ALL}")
+        
+        # Calculate appropriate number of slices
+        num_slices = calculate_slice_density(duration_seconds)
+        print(f"{Fore.BLUE}Calculated {num_slices} slices for {duration_seconds:.1f}s audio{Style.RESET_ALL}")
+        
+        # Rest of the function...
+        
+def process_audio_slice_mp3(audio, slice_info, output_folder, file_number):
+    """Process a single audio slice and export as MP3 192kbps"""
+    try:
+        # Convert times to milliseconds
+        begin_ms = int(slice_info['slice_begin'] * 1000)
+        end_ms = int(slice_info['slice_end'] * 1000)
+        
+        # Ensure we don't go beyond audio boundaries
+        begin_ms = max(0, begin_ms)
+        end_ms = min(len(audio), end_ms)
+        
+        # Extract slice
+        slice_audio = audio[begin_ms:end_ms]
+        
+        # Apply fade in/out (convert seconds to milliseconds)
+        fade_duration_ms = int(FADE_DURATION * 1000)
+        slice_audio = slice_audio.fade_in(fade_duration_ms).fade_out(fade_duration_ms)
+        
+        # Normalize audio
+        slice_audio = normalize(slice_audio)
+        
+        # Export file as MP3 192kbps
+        filename = f"{slice_info['type']}{file_number}.mp3"
+        output_path = os.path.join(output_folder, filename)
+        slice_audio.export(output_path, format="mp3", bitrate="192k")
+        
+        print(f"{Fore.GREEN}✅ Successfully created: {filename}{Style.RESET_ALL}")
+        print(f"{Fore.BLUE}   (from {slice_info['slice_begin']:.1f}s to {slice_info['slice_end']:.1f}s){Style.RESET_ALL}")
+        return output_path
+        
+    except Exception as e:
+        print(f"{Fore.RED}❌ Error processing slice: {e}{Style.RESET_ALL}")
+        return None
+
+def run_random_slicer():
+    """Run random audio slicing functionality"""
+    print(f"{Fore.CYAN}=== Random Audio Slicer Started ==={Style.RESET_ALL}")
+    print(f"Slice size: {SLICE_SIZE} seconds")
+    print(f"Fade duration: {FADE_DURATION} seconds")
+    print(f"Output format: MP3 192kbps{Style.RESET_ALL}")
+    print()
+    
+    # Select audio file
+    print(f"{Fore.BLUE}Please select the audio file to slice...{Style.RESET_ALL}")
+    audio_file = select_audio_file()
+    
+    if not audio_file:
+        print(f"{Fore.RED}❌ No audio file selected. Exiting.{Style.RESET_ALL}")
+        return
+    
+    # Generate random slices
+    print(f"{Fore.BLUE}Generating random slices...{Style.RESET_ALL}")
+    slices = generate_random_labels(audio_file)
+    if not slices:
+        return
+    
+    # Select output folder
+    print(f"{Fore.BLUE}Please select output folder for slices...{Style.RESET_ALL}")
+    blocks_dir = select_output_folder()
+    
+    if not blocks_dir:
+        print(f"{Fore.RED}❌ No output folder selected. Exiting.{Style.RESET_ALL}")
+        return
+    
+    # Get next file numbers from existing files in folder
+    next_m, next_v = get_next_file_numbers_from_folder(blocks_dir)
+    excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
+    
+    print(f"{Fore.GREEN}Audio file: {audio_file}{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}Label source: Randomly generated ({len(slices)} slices){Style.RESET_ALL}")
+    print(f"{Fore.GREEN}Output directory: {blocks_dir}{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}Starting file numbers - m: {next_m}, v: {next_v}{Style.RESET_ALL}")
+    print()
+    
+    print(f"{Fore.GREEN}Found {len(slices)} slices to process{Style.RESET_ALL}")
+    for i, slice_info in enumerate(slices, 1):
+        print(f"  {i}. {slice_info['type']} at {slice_info['climax_time']:.1f}s: {slice_info['description']}")
+    print()
+    
+    # Load audio file
+    print(f"{Fore.BLUE}Loading audio file...{Style.RESET_ALL}")
+    try:
+        audio = AudioSegment.from_file(audio_file)
+        print(f"{Fore.GREEN}✅ Audio loaded: {len(audio)/1000:.2f} seconds{Style.RESET_ALL}")
+    except Exception as e:
+        print(f"{Fore.RED}❌ Error loading audio file: {e}{Style.RESET_ALL}")
+        return
+    
+    # Process each slice
+    print(f"\n{Fore.CYAN}Processing slices...{Style.RESET_ALL}")
+    for slice_info in slices:
+        # Determine file number based on type
+        if slice_info['type'] == 'm':
+            file_number = next_m
+            next_m += 1
+        elif slice_info['type'] == 'v':
+            file_number = next_v
+            next_v += 1
+        else:
+            print(f"{Fore.YELLOW}⚠️  Warning: Unknown type '{slice_info['type']}', skipping{Style.RESET_ALL}")
+            continue
+        
+        # Process the slice as MP3
+        output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, file_number)
+        if output_path:
+            # Update Excel file
+            update_excel_file(excel_path, slice_info, file_number, output_path, audio_file)
+        print()
+    
+    # Verify files vs Excel database
+    verify_files_vs_excel(blocks_dir, excel_path)
+    
+    print(f"{Fore.CYAN}=== Random Audio Slicer Completed ==={Style.RESET_ALL}")
+   
 def main():
     choice = show_welcome_screen()
     
     if choice == '1':
-        run_audio_slicer()  # Just slicing
-    elif choice == '2':
-        print(f"{Fore.YELLOW}⚠️  Sequencing feature - Under construction{Style.RESET_ALL}")
-        return
-    elif choice == '3':
-        sub_choice = show_slice_and_sequence_menu()
-        if sub_choice == '1':
-            print(f"{Fore.YELLOW}⚠️  Slice and sequence with labels - Under construction{Style.RESET_ALL}")
-        elif sub_choice == '2':
-            print(f"{Fore.YELLOW}⚠️  Random slice and sequence - Under construction{Style.RESET_ALL}")
-        return
+        slice_choice = show_slice_options_menu()
+        if slice_choice == '1':
+            run_audio_slicer_with_labels()  # Your existing label-based slicer
+        elif slice_choice == '2':
+            no_labels_choice = show_no_labels_menu()
+            if no_labels_choice == '1':
+                print(f"{Fore.GREEN}🎯 Great! Please label your audio file in Audacity and then run this program again.{Style.RESET_ALL}")
+                print(f"{Fore.GREEN}   Remember to export labels as a .txt file with the same name as your audio file.{Style.RESET_ALL}")
+                return
+            elif no_labels_choice == '2':
+                run_random_slicer()  # New random slicer!
+                return
+    # ... rest of main function
+    #    
 
 if __name__ == "__main__":
     main()
