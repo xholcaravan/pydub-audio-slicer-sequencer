@@ -11,6 +11,9 @@ import argparse
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import sys
+from colorama import Fore, Back, Style, init
+# Initialize colorama (this makes colors work on Windows too)
+init()
 
 # Hardcoded parameters
 SLICE_SIZE = 30  # seconds
@@ -28,7 +31,7 @@ def parse_audio_txt(file_path):
                 
                 parts = line.split('\t')
                 if len(parts) < 3:
-                    print(f"Warning: Line {line_num} has invalid format: {line}")
+                    print(f"{Fore.YELLOW}⚠️  Warning: Line {line_num} has invalid format: {line}{Style.RESET_ALL}")
                     continue
                 
                 try:
@@ -50,14 +53,14 @@ def parse_audio_txt(file_path):
                     })
                     
                 except (ValueError, IndexError) as e:
-                    print(f"Error parsing line {line_num}: {line} - {e}")
+                    print(f"{Fore.RED}❌ Error parsing line {line_num}: {line} - {e}{Style.RESET_ALL}")
                     continue
                     
     except FileNotFoundError:
-        print(f"Error: File {file_path} not found")
+        print(f"{Fore.RED}❌ Error: File {file_path} not found{Style.RESET_ALL}")
         return []
     except Exception as e:
-        print(f"Error reading {file_path}: {e}")
+        print(f"{Fore.RED}❌ Error reading {file_path}: {e}{Style.RESET_ALL}")
         return []
     
     return slices
@@ -74,10 +77,10 @@ def get_next_file_numbers(excel_path):
         
     except FileNotFoundError:
         # If file doesn't exist, start from 1
-        print("blocks_list.xlsx not found, creating new file...")
+        print(f"{Fore.YELLOW}⚠️  blocks_list.xlsx not found, creating new file...{Style.RESET_ALL}")
         next_m, next_v = 1, 1
     except Exception as e:
-        print(f"Error reading Excel file: {e}")
+        print(f"{Fore.RED}❌ Error reading Excel file: {e}{Style.RESET_ALL}")
         next_m, next_v = 1, 1
     
     return next_m, next_v
@@ -108,11 +111,12 @@ def process_audio_slice(audio, slice_info, output_folder, file_number):
         output_path = os.path.join(output_folder, filename)
         slice_audio.export(output_path, format="wav")
         
-        print(f"Created: {filename} (from {slice_info['slice_begin']:.1f}s to {slice_info['slice_end']:.1f}s)")
+        print(f"{Fore.GREEN}✅ Successfully created: {filename}{Style.RESET_ALL}")
+        print(f"{Fore.BLUE}   (from {slice_info['slice_begin']:.1f}s to {slice_info['slice_end']:.1f}s){Style.RESET_ALL}")
         return output_path
         
     except Exception as e:
-        print(f"Error processing slice: {e}")
+        print(f"{Fore.RED}❌ Error processing slice: {e}{Style.RESET_ALL}")
         return None
 
 def update_excel_file(excel_path, slice_info, file_number, output_path, origin_file):
@@ -151,14 +155,14 @@ def update_excel_file(excel_path, slice_info, file_number, output_path, origin_f
                 other_type = 'v' if slice_info['type'] == 'm' else 'm'
                 pd.DataFrame(columns=[other_type, 'origin', 'description']).to_excel(writer, sheet_name=other_type, index=False)
                 
-        print(f"Updated Excel: {slice_info['type']}{file_number}")
+        print(f"{Fore.GREEN}✅ Updated Excel: {slice_info['type']}{file_number}{Style.RESET_ALL}")
         
     except Exception as e:
-        print(f"Error updating Excel file: {e}")
+        print(f"{Fore.RED}❌ Error updating Excel file: {e}{Style.RESET_ALL}")
 
 def verify_files_vs_excel(blocks_dir, excel_path):
     """Verify that files in blocks folder match the Excel database"""
-    print("\n=== Verifying Files vs Excel Database ===")
+    print(f"\n{Fore.CYAN}=== Verifying Files vs Excel Database ==={Style.RESET_ALL}")
     
     try:
         # Read Excel sheets
@@ -183,7 +187,7 @@ def verify_files_vs_excel(blocks_dir, excel_path):
             v_files_excel = [f"{row['v']}.wav" for _, row in v_df.iterrows() if pd.notna(row['v'])]
         
         # Compare Music files (m)
-        print("\n--- Music Files (m) ---")
+        print(f"\n{Fore.CYAN}--- Music Files (m) ---{Style.RESET_ALL}")
         m_folder_set = set(m_files_folder)
         m_excel_set = set(m_files_excel)
         
@@ -191,21 +195,21 @@ def verify_files_vs_excel(blocks_dir, excel_path):
         missing_in_excel = m_folder_set - m_excel_set
         
         if not missing_in_folder and not missing_in_excel:
-            print("✅ Perfect match! All Excel records have corresponding files")
+            print(f"{Fore.GREEN}✅ Perfect match! All Excel records have corresponding files{Style.RESET_ALL}")
         else:
             if missing_in_folder:
-                print("❌ Files in Excel but missing in folder:")
+                print(f"{Fore.RED}❌ Files in Excel but missing in folder:{Style.RESET_ALL}")
                 for file in sorted(missing_in_folder):
                     print(f"   - {file}")
             if missing_in_excel:
-                print("❌ Files in folder but missing in Excel:")
+                print(f"{Fore.RED}❌ Files in folder but missing in Excel:{Style.RESET_ALL}")
                 for file in sorted(missing_in_excel):
                     print(f"   - {file}")
         
         print(f"Total in Excel: {len(m_files_excel)}, Total in folder: {len(m_files_folder)}")
         
         # Compare Voice files (v)
-        print("\n--- Voice Files (v) ---")
+        print(f"\n{Fore.CYAN}--- Voice Files (v) ---{Style.RESET_ALL}")
         v_folder_set = set(v_files_folder)
         v_excel_set = set(v_files_excel)
         
@@ -213,35 +217,35 @@ def verify_files_vs_excel(blocks_dir, excel_path):
         missing_in_excel = v_folder_set - v_excel_set
         
         if not missing_in_folder and not missing_in_excel:
-            print("✅ Perfect match! All Excel records have corresponding files")
+            print(f"{Fore.GREEN}✅ Perfect match! All Excel records have corresponding files{Style.RESET_ALL}")
         else:
             if missing_in_folder:
-                print("❌ Files in Excel but missing in folder:")
+                print(f"{Fore.RED}❌ Files in Excel but missing in folder:{Style.RESET_ALL}")
                 for file in sorted(missing_in_folder):
                     print(f"   - {file}")
             if missing_in_excel:
-                print("❌ Files in folder but missing in Excel:")
+                print(f"{Fore.RED}❌ Files in folder but missing in Excel:{Style.RESET_ALL}")
                 for file in sorted(missing_in_excel):
                     print(f"   - {file}")
         
         print(f"Total in Excel: {len(v_files_excel)}, Total in folder: {len(v_files_folder)}")
         
         # Summary
-        print("\n--- Summary ---")
+        print(f"\n{Fore.CYAN}--- Summary ---{Style.RESET_ALL}")
         total_excel = len(m_files_excel) + len(v_files_excel)
         total_folder = len(m_files_folder) + len(v_files_folder)
         print(f"Total files in Excel: {total_excel}")
         print(f"Total files in folder: {total_folder}")
         
         if total_excel == total_folder:
-            print("✅ Overall: Database and folder are synchronized")
+            print(f"{Fore.GREEN}✅ Overall: Database and folder are synchronized{Style.RESET_ALL}")
         else:
-            print("⚠️  Overall: Database and folder are NOT synchronized")
+            print(f"{Fore.YELLOW}⚠️  Overall: Database and folder are NOT synchronized{Style.RESET_ALL}")
             
     except FileNotFoundError:
-        print("❌ Excel file not found - cannot verify")
+        print(f"{Fore.RED}❌ Excel file not found - cannot verify{Style.RESET_ALL}")
     except Exception as e:
-        print(f"❌ Error during verification: {e}")
+        print(f"{Fore.RED}❌ Error during verification: {e}{Style.RESET_ALL}")
 
 def select_audio_file():
     """Let user select audio file and return its path"""
@@ -272,76 +276,30 @@ def get_corresponding_txt_file(audio_file):
 def verify_files_exist(audio_file, txt_file):
     """Verify both audio and text files exist"""
     if not audio_file:
-        print("No audio file selected. Exiting.")
+        print(f"{Fore.RED}❌ No audio file selected. Exiting.{Style.RESET_ALL}")
         return False
     
     if not os.path.exists(audio_file):
-        print(f"Error: Audio file not found: {audio_file}")
-        return False
-    
-    if not os.path.exists(txt_file):
-        print(f"Error: Text file not found: {txt_file}")
-        print(f"Please create a text file named: {os.path.basename(txt_file)}")
-        print("in the same folder as your audio file.")
-        return False
-    
-    return True
-
-def select_output_folder():
-    """Let user select output folder for slices"""
-    root = tk.Tk()
-    root.withdraw()
-    output_folder = filedialog.askdirectory(title="Select Output Folder for Slices")
-    root.destroy()
-    return output_folder
-
-def select_audio_file():
-    """Let user select audio file and return its path"""
-    root = tk.Tk()
-    root.withdraw()
-    
-    audio_file = filedialog.askopenfilename(
-        title="Select Audio File",
-        filetypes=[
-            ("Audio files", "*.wav *.mp3 *.flac *.aiff *.aac *.ogg *.m4a"),
-            ("All files", "*.*")
-        ]
-    )
-    root.destroy()
-    return audio_file
-
-def get_corresponding_txt_file(audio_file):
-    """Get the corresponding txt file path based on audio file name"""
-    if not audio_file:
-        return None
-    
-    # Replace audio extension with .txt
-    base_name = os.path.splitext(audio_file)[0]
-    txt_file = base_name + '.txt'
-    
-    return txt_file
-
-def verify_files_exist(audio_file, txt_file):
-    """Verify both audio and text files exist"""
-    if not audio_file:
-        print("No audio file selected. Exiting.")
-        return False
-    
-    if not os.path.exists(audio_file):
-        print(f"Error: Audio file not found: {audio_file}")
+        print(f"{Fore.RED}❌ Error: Audio file not found: {audio_file}{Style.RESET_ALL}")
         return False
     
     if not os.path.exists(txt_file):
         audio_filename = os.path.basename(audio_file)
         txt_filename = os.path.basename(txt_file)
         
-        print(f"Error: Text file not found: {txt_file}")
-        print("\nTo create the required text file:")
-        print(f"1. Open {audio_filename} in Audacity")
-        print("2. Add labels at the climax points you want to slice")
-        print("3. Export labels: File → Export → Export Labels...")
-        print(f"4. Save as: {txt_filename}")
-        print("5. Run this program again")
+        print(f"{Fore.RED}╔══════════════════════════════════════════════════════════════╗{Style.RESET_ALL}")
+        print(f"{Fore.RED}║                       FILE NOT FOUND                         ║{Style.RESET_ALL}")
+        print(f"{Fore.RED}╚══════════════════════════════════════════════════════════════╗{Style.RESET_ALL}")
+        print(f"{Fore.RED}❌ Error: Text file not found:{Style.RESET_ALL}")
+        print(f"{Fore.RED}{txt_file}{Style.RESET_ALL}")
+        print()
+        print(f"{Fore.YELLOW}📝 To create the required text file:{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}1. Open {Style.BRIGHT}{audio_filename}{Style.RESET_ALL}{Fore.WHITE} in Audacity{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}2. Add labels at the climax points you want to slice{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}3. Export labels: File → Export → Export Labels...{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}4. Save as: {Style.BRIGHT}{txt_filename}{Style.RESET_ALL}{Fore.WHITE} in the same folder{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}5. Run this program again{Style.RESET_ALL}")
+        print(f"{Fore.RED}╔══════════════════════════════════════════════════════════════╗{Style.RESET_ALL}")
         return False
     
     return True
@@ -356,263 +314,66 @@ def select_output_folder():
 
 def show_welcome_screen():
     """Display welcome message and program description"""
-    welcome_text = """
-╔══════════════════════════════════════════════════════════════╗
-║                 pydub-audio-slicer-sequencer                 ║
-║                     Audio Processing Tool                    ║
-╚══════════════════════════════════════════════════════════════╝
+    welcome_text = f"""
+{Fore.CYAN}╔══════════════════════════════════════════════════════════════╗{Style.RESET_ALL}
+{Fore.CYAN}║                 pydub-audio-slicer-sequencer                 ║{Style.RESET_ALL}
+{Fore.CYAN}║                     Audio Processing Tool                    ║{Style.RESET_ALL}
+{Fore.CYAN}╚══════════════════════════════════════════════════════════════╝{Style.RESET_ALL}
 
-Use this tool to:
-1 - Slice an audio file into several blocks
-2 - Sequence blocks to create an audio file
+{Fore.WHITE}Use this tool to:{Style.RESET_ALL}
+{Fore.GREEN}1 - Slice an audio file into several blocks{Style.RESET_ALL}
+{Fore.BLUE}2 - Sequence blocks to create an audio file{Style.RESET_ALL}  
+{Fore.MAGENTA}3 - Slice an audio file and produce a sequence{Style.RESET_ALL}
 
-Option 1 will:
+{Fore.YELLOW}Option 1 will:{Style.RESET_ALL}
 • Extract 30-second audio segments centered on climax points
 • Apply fade in/out and normalization  
 • Track all slices in an Excel database
 • Maintain file organization and verification
 
-Option 2 will:
-• Sequence 30-second audio segments centered on climax points
+{Fore.YELLOW}Option 2 will:{Style.RESET_ALL}
+• Sequence existing blocks into a new audio file
+
+{Fore.YELLOW}Option 3 will:{Style.RESET_ALL}
+• Extract 30-second audio segments centered on climax points
+• Apply fade in/out and normalization
+• Automatically sequence the slices into a new audio file
+• Track all slices in an Excel database
 """
     print(welcome_text)
     
     while True:
-        choice = input("Select option (1 or 2): ").strip()
-        if choice in ['1', '2']:
+        choice = input(f"{Fore.WHITE}Select option (1, 2, or 3): {Style.RESET_ALL}").strip()
+        if choice in ['1', '2', '3']:
             return choice
         else:
-            print("Invalid choice. Please enter 1 or 2.")
+            print(f"{Fore.RED}❌ Invalid choice. Please enter 1, 2, or 3.{Style.RESET_ALL}")
 
-    # Show welcome screen
-    show_welcome_screen()
+def show_slice_and_sequence_menu():
+    """Show submenu for slice and sequence options"""
+    submenu_text = f"""
+{Fore.CYAN}Slice and Sequence Options:{Style.RESET_ALL}
+{Fore.GREEN}1 - I have an audio file with labels{Style.RESET_ALL}
+{Fore.YELLOW}2 - I am a lazy bastard and just want random results{Style.RESET_ALL}
+"""
+    print(submenu_text)
     
-    print("=== Audio Slicer Started ===")
-    print(f"Slice size: {SLICE_SIZE} seconds")
-    # ... rest of your main function remains the same    print("=== Audio Slicer Started ===")
-    print(f"Slice size: {SLICE_SIZE} seconds")
-    print(f"Fade duration: {FADE_DURATION} seconds")
-    print()
-    
-    # Select audio file
-    print("Please select the audio file to slice...")
-    audio_file = select_audio_file()
-    
-    # Get corresponding txt file
-    txt_file = get_corresponding_txt_file(audio_file)
-    
-    # Verify files exist
-    if not verify_files_exist(audio_file, txt_file):
-        return
-    
-    # Select output folder
-    print("Please select output folder for slices...")
-    blocks_dir = select_output_folder()
-    
-    if not blocks_dir:
-        print("No output folder selected. Exiting.")
-        return
-    
-    excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
-    
-    print(f"Audio file: {audio_file}")
-    print(f"Text file: {txt_file}")
-    print(f"Output directory: {blocks_dir}")
-    print()
-    
-    # Parse audio.txt
-    print("Parsing audio.txt...")
-    slices = parse_audio_txt(txt_file)
-    if not slices:
-        print("No valid slices found in audio.txt")
-        return
-    
-    print(f"Found {len(slices)} slices to process")
-    for i, slice_info in enumerate(slices, 1):
-        print(f"  {i}. {slice_info['type']} at {slice_info['climax_time']}s: {slice_info['description']}")
-    print()
-    
-    # Get next file numbers from Excel
-    next_m, next_v = get_next_file_numbers(excel_path)
-    print(f"Next file numbers - m: {next_m}, v: {next_v}")
-    print()
-    
-    # Load audio file
-    print("Loading audio file...")
-    try:
-        audio = AudioSegment.from_file(audio_file)
-        print(f"Audio loaded: {len(audio)/1000:.2f} seconds")
-    except Exception as e:
-        print(f"Error loading audio file: {e}")
-        return
-    
-    # Process each slice
-    print("\nProcessing slices...")
-    for slice_info in slices:
-        # Determine file number based on type
-        if slice_info['type'] == 'm':
-            file_number = next_m
-            next_m += 1
-        elif slice_info['type'] == 'v':
-            file_number = next_v
-            next_v += 1
+    while True:
+        sub_choice = input(f"{Fore.WHITE}Select option (1 or 2): {Style.RESET_ALL}").strip()
+        if sub_choice in ['1', '2']:
+            return sub_choice
         else:
-            print(f"Warning: Unknown type '{slice_info['type']}', skipping")
-            continue
-        
-        # Process the slice
-        output_path = process_audio_slice(audio, slice_info, blocks_dir, file_number)
-        if output_path:
-            # Update Excel file
-            update_excel_file(excel_path, slice_info, file_number, output_path, audio_file)
-        print()
-    
-    # Verify files vs Excel database
-    verify_files_vs_excel(blocks_dir, excel_path)
-    
-    print("=== Audio Slicer Completed ===")    # Initialize tkinter (hidden root window)
-    root = tk.Tk()
-    root.withdraw()  # Hide the main window
-    
-    print("=== Audio Slicer Started ===")
-    print(f"Slice size: {SLICE_SIZE} seconds")
-    print(f"Fade duration: {FADE_DURATION} seconds")
-    print()
-    
-    # Let user select audio file
-    print("Please select the audio file to slice...")
-    audio_file = filedialog.askopenfilename(
-        title="Select Audio File",
-        filetypes=[
-            ("Audio files", "*.wav *.mp3 *.flac *.aiff *.aac *.ogg *.m4a"),
-            ("All files", "*.*")
-        ]
-    )
-    
-    if not audio_file:
-        print("No audio file selected. Exiting.")
-        return
-    
-    # Let user select text file with slice definitions
-    print("Please select the text file with slice definitions...")
-    txt_file = filedialog.askopenfilename(
-        title="Select Slice Definitions File",
-        filetypes=[
-            ("Text files", "*.txt"),
-            ("All files", "*.*")
-        ]
-    )
-    
-    if not txt_file:
-        print("No text file selected. Exiting.")
-        return
-    
-    # Let user select output folder
-    print("Please select output folder for slices...")
-    blocks_dir = filedialog.askdirectory(title="Select Output Folder")
-    
-    if not blocks_dir:
-        print("No output folder selected. Exiting.")
-        return
-    
-    excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
-    
-    print(f"Audio file: {audio_file}")
-    print(f"Text file: {txt_file}")
-    print(f"Output directory: {blocks_dir}")
-    print()
-    
-    # Rest of your main function remains the same...
-    # Remove the old path definitions and file existence checks    # Define paths
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    raw_audio_dir = os.path.join(base_dir, "raw audio")
-    blocks_dir = os.path.join(base_dir, "blocks")
-    excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
-    
-    # Create blocks directory if it doesn't exist
-    os.makedirs(blocks_dir, exist_ok=True)
-    
-    # File paths
-    audio_file = os.path.join(raw_audio_dir, "audio.wav")
-    txt_file = os.path.join(raw_audio_dir, "audio.txt")
-    
-    print("=== Audio Slicer Started ===")
-    print(f"Slice size: {SLICE_SIZE} seconds")
-    print(f"Fade duration: {FADE_DURATION} seconds")
-    print(f"Audio file: {audio_file}")
-    print(f"Text file: {txt_file}")
-    print(f"Output directory: {blocks_dir}")
-    print()
-    
-    # Check if input files exist
-    if not os.path.exists(audio_file):
-        print(f"Error: Audio file not found: {audio_file}")
-        return
-    if not os.path.exists(txt_file):
-        print(f"Error: Text file not found: {txt_file}")
-        return
-    
-    # Parse audio.txt
-    print("Parsing audio.txt...")
-    slices = parse_audio_txt(txt_file)
-    if not slices:
-        print("No valid slices found in audio.txt")
-        return
-    
-    print(f"Found {len(slices)} slices to process")
-    for i, slice_info in enumerate(slices, 1):
-        print(f"  {i}. {slice_info['type']} at {slice_info['climax_time']}s: {slice_info['description']}")
-    print()
-    
-    # Get next file numbers from Excel
-    next_m, next_v = get_next_file_numbers(excel_path)
-    print(f"Next file numbers - m: {next_m}, v: {next_v}")
-    print()
-    
-    # Load audio file
-    print("Loading audio file...")
-    try:
-        audio = AudioSegment.from_file(audio_file)
-        print(f"Audio loaded: {len(audio)/1000:.2f} seconds")
-    except Exception as e:
-        print(f"Error loading audio file: {e}")
-        return
-    
-    # Process each slice
-    print("\nProcessing slices...")
-    for slice_info in slices:
-        # Determine file number based on type
-        if slice_info['type'] == 'm':
-            file_number = next_m
-            next_m += 1
-        elif slice_info['type'] == 'v':
-            file_number = next_v
-            next_v += 1
-        else:
-            print(f"Warning: Unknown type '{slice_info['type']}', skipping")
-            continue
-        
-        # Process the slice
-        output_path = process_audio_slice(audio, slice_info, blocks_dir, file_number)
-        if output_path:
-            # Update Excel file
-            update_excel_file(excel_path, slice_info, file_number, output_path, audio_file)
-        print()
-    
-    # Verify files vs Excel database
-    verify_files_vs_excel(blocks_dir, excel_path)
-    
-    print("=== Audio Slicer Completed ===")
+            print(f"{Fore.RED}❌ Invalid choice. Please enter 1 or 2.{Style.RESET_ALL}")
 
 def run_audio_slicer():
     """Run the audio slicing functionality"""
-    print("=== Audio Slicer Started ===")
+    print(f"{Fore.CYAN}=== Audio Slicer Started ==={Style.RESET_ALL}")
     print(f"Slice size: {SLICE_SIZE} seconds")
     print(f"Fade duration: {FADE_DURATION} seconds")
     print()
     
     # Select audio file
-    print("Please select the audio file to slice...")
+    print(f"{Fore.BLUE}Please select the audio file to slice...{Style.RESET_ALL}")
     audio_file = select_audio_file()
     
     # Get corresponding txt file
@@ -623,48 +384,48 @@ def run_audio_slicer():
         return
     
     # Select output folder
-    print("Please select output folder for slices...")
+    print(f"{Fore.BLUE}Please select output folder for slices...{Style.RESET_ALL}")
     blocks_dir = select_output_folder()
     
     if not blocks_dir:
-        print("No output folder selected. Exiting.")
+        print(f"{Fore.RED}❌ No output folder selected. Exiting.{Style.RESET_ALL}")
         return
     
     excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
     
-    print(f"Audio file: {audio_file}")
-    print(f"Text file: {txt_file}")
-    print(f"Output directory: {blocks_dir}")
+    print(f"{Fore.GREEN}Audio file: {audio_file}{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}Text file: {txt_file}{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}Output directory: {blocks_dir}{Style.RESET_ALL}")
     print()
     
     # Parse audio.txt
-    print("Parsing audio.txt...")
+    print(f"{Fore.BLUE}Parsing audio.txt...{Style.RESET_ALL}")
     slices = parse_audio_txt(txt_file)
     if not slices:
-        print("No valid slices found in audio.txt")
+        print(f"{Fore.YELLOW}⚠️  No valid slices found in audio.txt{Style.RESET_ALL}")
         return
     
-    print(f"Found {len(slices)} slices to process")
+    print(f"{Fore.GREEN}Found {len(slices)} slices to process{Style.RESET_ALL}")
     for i, slice_info in enumerate(slices, 1):
         print(f"  {i}. {slice_info['type']} at {slice_info['climax_time']}s: {slice_info['description']}")
     print()
     
     # Get next file numbers from Excel
     next_m, next_v = get_next_file_numbers(excel_path)
-    print(f"Next file numbers - m: {next_m}, v: {next_v}")
+    print(f"{Fore.BLUE}Next file numbers - m: {next_m}, v: {next_v}{Style.RESET_ALL}")
     print()
     
     # Load audio file
-    print("Loading audio file...")
+    print(f"{Fore.BLUE}Loading audio file...{Style.RESET_ALL}")
     try:
         audio = AudioSegment.from_file(audio_file)
-        print(f"Audio loaded: {len(audio)/1000:.2f} seconds")
+        print(f"{Fore.GREEN}✅ Audio loaded: {len(audio)/1000:.2f} seconds{Style.RESET_ALL}")
     except Exception as e:
-        print(f"Error loading audio file: {e}")
+        print(f"{Fore.RED}❌ Error loading audio file: {e}{Style.RESET_ALL}")
         return
     
     # Process each slice
-    print("\nProcessing slices...")
+    print(f"\n{Fore.CYAN}Processing slices...{Style.RESET_ALL}")
     for slice_info in slices:
         # Determine file number based on type
         if slice_info['type'] == 'm':
@@ -674,7 +435,7 @@ def run_audio_slicer():
             file_number = next_v
             next_v += 1
         else:
-            print(f"Warning: Unknown type '{slice_info['type']}', skipping")
+            print(f"{Fore.YELLOW}⚠️  Warning: Unknown type '{slice_info['type']}', skipping{Style.RESET_ALL}")
             continue
         
         # Process the slice
@@ -687,15 +448,22 @@ def run_audio_slicer():
     # Verify files vs Excel database
     verify_files_vs_excel(blocks_dir, excel_path)
     
-    print("=== Audio Slicer Completed ===")
+    print(f"{Fore.CYAN}=== Audio Slicer Completed ==={Style.RESET_ALL}")
 
 def main():
     choice = show_welcome_screen()
     
     if choice == '1':
-        run_audio_slicer()  # This runs the actual slicer
+        run_audio_slicer()  # Just slicing
     elif choice == '2':
-        print("Sequencing feature - Under construction")
+        print(f"{Fore.YELLOW}⚠️  Sequencing feature - Under construction{Style.RESET_ALL}")
+        return
+    elif choice == '3':
+        sub_choice = show_slice_and_sequence_menu()
+        if sub_choice == '1':
+            print(f"{Fore.YELLOW}⚠️  Slice and sequence with labels - Under construction{Style.RESET_ALL}")
+        elif sub_choice == '2':
+            print(f"{Fore.YELLOW}⚠️  Random slice and sequence - Under construction{Style.RESET_ALL}")
         return
 
 if __name__ == "__main__":
