@@ -20,7 +20,6 @@ import random
 SLICE_SIZE = 30  # seconds
 FADE_DURATION = SLICE_SIZE / 2  # seconds
 
-
 def parse_audio_txt(file_path):
     """Parse the audio.txt file and return list of slices"""
     slices = []
@@ -690,24 +689,187 @@ def run_random_slicer():
     
     print(f"{Fore.CYAN}=== Random Audio Slicer Completed ==={Style.RESET_ALL}")
    
+def scan_available_blocks(blocks_dir):
+    """Scan blocks directory for m and v audio files"""
+    if not os.path.exists(blocks_dir):
+        return [], []
+    
+    all_files = os.listdir(blocks_dir)
+    m_blocks = [f for f in all_files if f.startswith('m') and f.endswith('.mp3')]
+    v_blocks = [f for f in all_files if f.startswith('v') and f.endswith('.mp3')]
+    
+    # Sort by number for consistent ordering before shuffling
+    m_blocks.sort(key=lambda x: int(x[1:].split('.')[0]))
+    v_blocks.sort(key=lambda x: int(x[1:].split('.')[0]))
+    
+    return m_blocks, v_blocks
+
+def validate_sequence_requirements(m_blocks, v_blocks):
+    """Validate that we have enough blocks for sequencing"""
+    if len(m_blocks) < 3:
+        print(f"{Fore.RED}❌ Not enough music blocks: {len(m_blocks)} found (minimum 3 required){Style.RESET_ALL}")
+        return False
+    if len(v_blocks) < 3:
+        print(f"{Fore.RED}❌ Not enough voice blocks: {len(v_blocks)} found (minimum 3 required){Style.RESET_ALL}")
+        return False
+    
+    print(f"{Fore.GREEN}✅ Found {len(m_blocks)} music blocks and {len(v_blocks)} voice blocks{Style.RESET_ALL}")
+    return True
+
+def create_random_sequence(m_blocks, v_blocks):
+    """Create random sequences for both channels"""
+    # Shuffle blocks randomly
+    random.shuffle(m_blocks)
+    random.shuffle(v_blocks)
+    
+    # Use the minimum length to determine sequence duration
+    sequence_length = min(len(m_blocks), len(v_blocks))
+    
+    # Take only the blocks we'll actually use
+    m_sequence = m_blocks[:sequence_length]
+    v_sequence = v_blocks[:sequence_length]
+    
+    # Show which blocks are used vs skipped
+    print(f"{Fore.BLUE}🎵 Sequence Configuration:{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}   Using {sequence_length} blocks from each channel{Style.RESET_ALL}")
+    
+    if len(m_blocks) > sequence_length:
+        print(f"{Fore.YELLOW}   Skipping {len(m_blocks) - sequence_length} music blocks: {m_blocks[sequence_length:]}{Style.RESET_ALL}")
+    if len(v_blocks) > sequence_length:
+        print(f"{Fore.YELLOW}   Skipping {len(v_blocks) - sequence_length} voice blocks: {v_blocks[sequence_length:]}{Style.RESET_ALL}")
+    
+    return m_sequence, v_sequence
+
+def build_multi_channel_sequence(blocks_dir, m_sequence, v_sequence):
+    """Build the final sequence with 15-second voice channel offset"""
+    try:
+        print(f"{Fore.BLUE}🔊 Building audio sequence...{Style.RESET_ALL}")
+        
+        # Create 15 seconds of silence for voice channel offset
+        silence_15s = AudioSegment.silent(duration=15000)  # 15 seconds in milliseconds
+        
+        # Initialize channels
+        music_channel = AudioSegment.empty()
+        voice_channel = silence_15s  # Start voice channel with 15s silence
+        
+        # Load and concatenate music blocks
+        print(f"{Fore.BLUE}   Loading music channel...{Style.RESET_ALL}")
+        for i, block in enumerate(m_sequence, 1):
+            block_path = os.path.join(blocks_dir, block)
+            audio_segment = AudioSegment.from_file(block_path)
+            music_channel += audio_segment
+            print(f"{Fore.GREEN}     [{i}/{len(m_sequence)}] Added: {block}{Style.RESET_ALL}")
+        
+        # Load and concatenate voice blocks
+        print(f"{Fore.BLUE}   Loading voice channel...{Style.RESET_ALL}")
+        for i, block in enumerate(v_sequence, 1):
+            block_path = os.path.join(blocks_dir, block)
+            audio_segment = AudioSegment.from_file(block_path)
+            voice_channel += audio_segment
+            print(f"{Fore.GREEN}     [{i}/{len(v_sequence)}] Added: {block}{Style.RESET_ALL}")
+        
+        # Ensure both channels are the same length (pad with silence if needed)
+        if len(music_channel) > len(voice_channel):
+            voice_channel += AudioSegment.silent(duration=len(music_channel) - len(voice_channel))
+        elif len(voice_channel) > len(music_channel):
+            music_channel += AudioSegment.silent(duration=len(voice_channel) - len(music_channel))
+        
+        # Mix the two stereo channels
+        print(f"{Fore.BLUE}   Mixing channels...{Style.RESET_ALL}")
+        final_audio = music_channel.overlay(voice_channel)
+        
+        print(f"{Fore.GREEN}✅ Sequence built: {len(final_audio)/1000:.1f}s total duration{Style.RESET_ALL}")
+        return final_audio
+        
+    except Exception as e:
+        print(f"{Fore.RED}❌ Error building sequence: {e}{Style.RESET_ALL}")
+        return None
+
+def run_sequencer():
+    """Main sequencing workflow"""
+    print(f"{Fore.CYAN}=== Audio Sequencer Started ==={Style.RESET_ALL}")
+    print(f"{Fore.BLUE}This will create a mixed sequence with:{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}  • Music channel starting at 0:00{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}  • Voice channel starting at 0:15{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}  • Random block order{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}  • Stereo output{Style.RESET_ALL}")
+    print()
+    
+    # Select blocks directory
+    print(f"{Fore.BLUE}Please select the blocks folder...{Style.RESET_ALL}")
+    blocks_dir = filedialog.askdirectory(title="Select Blocks Folder")
+    
+    if not blocks_dir:
+        print(f"{Fore.RED}❌ No blocks folder selected. Exiting.{Style.RESET_ALL}")
+        return
+    
+    # Scan for available blocks
+    print(f"{Fore.BLUE}Scanning for audio blocks...{Style.RESET_ALL}")
+    m_blocks, v_blocks = scan_available_blocks(blocks_dir)
+    
+    if not validate_sequence_requirements(m_blocks, v_blocks):
+        return
+    
+    # Create random sequence
+    m_sequence, v_sequence = create_random_sequence(m_blocks, v_blocks)
+    
+    # Build the audio sequence
+    final_audio = build_multi_channel_sequence(blocks_dir, m_sequence, v_sequence)
+    if not final_audio:
+        return
+    
+    # Let user choose output location and filename
+    print(f"{Fore.BLUE}Please choose where to save the sequence...{Style.RESET_ALL}")
+    output_path = filedialog.asksaveasfilename(
+        title="Save Sequence As",
+        defaultextension=".mp3",
+        filetypes=[("MP3 files", "*.mp3"), ("All files", "*.*")]
+    )
+    
+    if not output_path:
+        print(f"{Fore.RED}❌ No output file selected. Exiting.{Style.RESET_ALL}")
+        return
+    
+    # Export final sequence
+    try:
+        print(f"{Fore.BLUE}Exporting sequence...{Style.RESET_ALL}")
+        final_audio.export(output_path, format="mp3", bitrate="192k")
+        print(f"{Fore.GREEN}✅ Sequence saved: {output_path}{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}🎵 Final duration: {len(final_audio)/1000:.1f} seconds{Style.RESET_ALL}")
+        
+    except Exception as e:
+        print(f"{Fore.RED}❌ Error exporting sequence: {e}{Style.RESET_ALL}")
+        return
+    
+    print(f"{Fore.CYAN}=== Audio Sequencer Completed ==={Style.RESET_ALL}")
+
 def main():
     choice = show_welcome_screen()
     
     if choice == '1':
         slice_choice = show_slice_options_menu()
         if slice_choice == '1':
-            run_audio_slicer_with_labels()  # Your existing label-based slicer
+            run_audio_slicer_with_labels()
         elif slice_choice == '2':
             no_labels_choice = show_no_labels_menu()
             if no_labels_choice == '1':
-                print(f"{Fore.GREEN}🎯 Great! Please label your audio file in Audacity and then run this program again.{Style.RESET_ALL}")
-                print(f"{Fore.GREEN}   Remember to export labels as a .txt file with the same name as your audio file.{Style.RESET_ALL}")
+                print(f"{Fore.GREEN}🎯 Great! Please label your audio file in Audacity...{Style.RESET_ALL}")
                 return
             elif no_labels_choice == '2':
-                run_random_slicer()  # New random slicer!
+                run_random_slicer()
                 return
-    # ... rest of main function
-    #    
+                
+    elif choice == '2':
+        run_sequencer()  # NEW: Sequence existing blocks!
+        return
+        
+    elif choice == '3':
+        sub_choice = show_slice_and_sequence_menu()
+        if sub_choice == '1':
+            print(f"{Fore.YELLOW}⚠️  Slice and sequence with labels - Under construction{Style.RESET_ALL}")
+        elif sub_choice == '2':
+            print(f"{Fore.YELLOW}⚠️  Random slice and sequence - Under construction{Style.RESET_ALL}")
+        return
 
 if __name__ == "__main__":
     main()
