@@ -529,8 +529,53 @@ def generate_random_labels(audio_file):
         num_slices = calculate_slice_density(duration_seconds)
         print(f"{Fore.BLUE}Calculated {num_slices} slices for {duration_seconds:.1f}s audio{Style.RESET_ALL}")
         
-        # Rest of the function...
+        # Ensure we don't try to create slices beyond audio length
+        max_start_time = duration_seconds - SLICE_SIZE
+        if max_start_time <= 0:
+            print(f"{Fore.RED}❌ Audio file is too short ({duration_seconds:.1f}s) for {SLICE_SIZE}s slices{Style.RESET_ALL}")
+            return None
         
+        slices = []
+        for i in range(num_slices):
+            # Generate random start time within valid range with some spacing
+            min_spacing = SLICE_SIZE * 1.5  # Ensure slices don't overlap too much
+            max_attempts = 100
+            attempt = 0
+            
+            while attempt < max_attempts:
+                start_time = random.uniform(0, max_start_time)
+                climax_time = start_time + (SLICE_SIZE / 2)
+                
+                # Check if this slice overlaps significantly with existing slices
+                overlap = False
+                for existing_slice in slices:
+                    if abs(existing_slice['climax_time'] - climax_time) < min_spacing:
+                        overlap = True
+                        break
+                
+                if not overlap:
+                    break
+                attempt += 1
+            
+            # Randomly choose between 'm' (music) and 'v' (voice)
+            audio_type = random.choice(['m', 'v'])
+            description = f"random_{audio_type}_{i+1}"
+            
+            slices.append({
+                'climax_time': climax_time,
+                'type': audio_type,
+                'description': description,
+                'slice_begin': start_time,
+                'slice_end': start_time + SLICE_SIZE
+            })
+        
+        print(f"{Fore.GREEN}✅ Generated {num_slices} random slices for {duration_seconds:.1f}s audio{Style.RESET_ALL}")
+        return slices
+        
+    except Exception as e:
+        print(f"{Fore.RED}❌ Error generating random labels: {e}{Style.RESET_ALL}")
+        return None
+
 def process_audio_slice_mp3(audio, slice_info, output_folder, file_number):
     """Process a single audio slice and export as MP3 192kbps"""
     try:
