@@ -1,0 +1,45 @@
+# Audio files
+*.mp3
+*.wav
+*.aiff
+*.aac
+*.ogg
+*.flac
+*.m4a
+
+# Excel files (allow blocks_list.xlsx but no others)
+*.xlsx
+!blocks_list.xlsx
+
+# Temporary files
+*.tmp
+*.temp
+*_temp.txt
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.python-version
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build directories
+build/
+dist/
+*.spec
+
+# Virtual environment
+venv/
+
+# Compiled applications
+AudioSlicer_v1.0_Linux/
+AudioSlicer_v1.0_Linux_x64.zip
