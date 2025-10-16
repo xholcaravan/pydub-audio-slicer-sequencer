@@ -122,40 +122,6 @@ def get_next_file_numbers(excel_path):
     
     return next_m, next_v
 
-def process_audio_slice(audio, slice_info, output_folder, file_number):
-    """Process a single audio slice and export as MP3 192kbps"""
-    try:
-        # Convert times to milliseconds
-        begin_ms = int(slice_info['slice_begin'] * 1000)
-        end_ms = int(slice_info['slice_end'] * 1000)
-        
-        # Ensure we don't go beyond audio boundaries
-        begin_ms = max(0, begin_ms)
-        end_ms = min(len(audio), end_ms)
-        
-        # Extract slice
-        slice_audio = audio[begin_ms:end_ms]
-        
-        # Apply fade in/out (convert seconds to milliseconds)
-        fade_duration_ms = int(FADE_DURATION * 1000)
-        slice_audio = slice_audio.fade_in(fade_duration_ms).fade_out(fade_duration_ms)
-        
-        # Normalize audio
-        slice_audio = normalize(slice_audio)
-        
-        # Export file as MP3 192kbps
-        filename = f"{slice_info['type']}{file_number}.mp3"
-        output_path = os.path.join(output_folder, filename)
-        slice_audio.export(output_path, format="mp3", bitrate="192k")
-        
-        print(f"{Fore.GREEN}✅ Successfully created: {filename}{Style.RESET_ALL}")
-        print(f"{Fore.BLUE}   (from {slice_info['slice_begin']:.1f}s to {slice_info['slice_end']:.1f}s){Style.RESET_ALL}")
-        return output_path
-        
-    except Exception as e:
-        print(f"{Fore.RED}❌ Error processing slice: {e}{Style.RESET_ALL}")
-        return None
-
 def update_excel_file(excel_path, slice_info, file_number, output_path, origin_file):
     """Update the Excel file with new slice information"""
     try:
@@ -494,7 +460,7 @@ def slice_audio_from_labels(audio_file, blocks_dir):
             continue
         
         # Process the slice as MP3
-        output_path = process_audio_slice(audio, slice_info, blocks_dir, file_number)
+        output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, file_number)
         if output_path:
             # Update Excel file
             update_excel_file(excel_path, slice_info, file_number, output_path, audio_file)
