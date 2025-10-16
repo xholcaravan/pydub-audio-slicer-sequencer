@@ -1,0 +1,214 @@
+[1mdiff --git a/slicer.py b/slicer.py[m
+[1mindex 66ed5f7..de5d233 100644[m
+[1m--- a/slicer.py[m
+[1m+++ b/slicer.py[m
+[36m@@ -12,9 +12,12 @@[m [mimport tkinter as tk[m
+ from tkinter import filedialog, messagebox[m
+ import sys[m
+ from colorama import Fore, Back, Style, init[m
+[32m+[m[32mimport time[m
+[32m+[m[32mimport os[m
+[32m+[m[32mimport random[m
+[32m+[m
+ # Initialize colorama (this makes colors work on Windows too)[m
+ init()[m
+[31m-import random[m
+ [m
+ # Hardcoded parameters[m
+ SLICE_SIZE = 30  # seconds[m
+[36m@@ -313,43 +316,129 @@[m [mdef select_output_folder():[m
+     root.destroy()[m
+     return output_folder[m
+ [m
+[32m+[m[32mdef clear_screen():[m
+[32m+[m[32m    """Clear the terminal screen"""[m
+[32m+[m[32m    os.system('cls' if os.name == 'nt' else 'clear')[m
+[32m+[m
+[32m+[m[32mdef matrix_rain():[m
+[32m+[m[32m    """Create a Matrix-style digital rain animation"""[m
+[32m+[m[32m    width = 60[m
+[32m+[m[32m    height = 20[m
+[32m+[m[32m    chars = "01"[m
+[32m+[m[41m    [m
+[32m+[m[32m    # Create initial columns with random characters[m
+[32m+[m[32m    columns = [[' ' for _ in range(height)] for _ in range(width)][m
+[32m+[m[32m    speeds = [random.uniform(0.1, 0.3) for _ in range(width)][m
+[32m+[m[32m    positions = [random.randint(-height, 0) for _ in range(width)][m
+[32m+[m[41m    [m
+[32m+[m[32m    start_time = time.time()[m
+[32m+[m[32m    while time.time() - start_time < 3:  # Run for 3 seconds[m
+[32m+[m[32m        clear_screen()[m
+[32m+[m[41m        [m
+[32m+[m[32m        # Update each column[m
+[32m+[m[32m        for i in range(width):[m
+[32m+[m[32m            positions[i] += speeds[i][m
+[32m+[m[32m            if positions[i] >= height:[m
+[32m+[m[32m                positions[i] = random.randint(-height, 0)[m
+[32m+[m[32m                speeds[i] = random.uniform(0.1, 0.3)[m
+[32m+[m[41m            [m
+[32m+[m[32m            # Fill the column with characters[m
+[32m+[m[32m            for j in range(height):[m
+[32m+[m[32m                if 0 <= j - int(positions[i]) < random.randint(5, 15):[m
+[32m+[m[32m                    columns[i][j] = random.choice(chars)[m
+[32m+[m[32m                else:[m
+[32m+[m[32m                    columns[i][j] = ' '[m
+[32m+[m[41m        [m
+[32m+[m[32m        # Print the matrix rain[m
+[32m+[m[32m        print(f"{Fore.GREEN}", end="")[m
+[32m+[m[32m        for j in range(height):[m
+[32m+[m[32m            line = ""[m
+[32m+[m[32m            for i in range(width):[m
+[32m+[m[32m                line += columns[i][j][m
+[32m+[m[32m            print(f"    {line}")[m
+[32m+[m[41m        [m
+[32m+[m[32m        time.sleep(0.1)[m
+[32m+[m
+[32m+[m[32mdef reveal_title():[m
+[32m+[m[32m    """Reveal the title with typewriter effect"""[m
+[32m+[m[32m    title = "AUDIO SLICER AND SEQUENCER"[m
+[32m+[m[32m    subtitle = "DIGITAL AUDIO PROCESSING SYSTEM"[m
+[32m+[m[41m    [m
+[32m+[m[32m    print(f"\n{Fore.GREEN}", end="")[m
+[32m+[m[41m    [m
+[32m+[m[32m    # Typewriter effect for title[m
+[32m+[m[32m    for char in title:[m
+[32m+[m[32m        print(char, end='', flush=True)[m
+[32m+[m[32m        time.sleep(0.05)[m
+[32m+[m[41m    [m
+[32m+[m[32m    print(f"{Style.RESET_ALL}\n{Fore.CYAN}", end="")[m
+[32m+[m[41m    [m
+[32m+[m[32m    # Typewriter effect for subtitle[m
+[32m+[m[32m    for char in subtitle:[m
+[32m+[m[32m        print(char, end='', flush=True)[m
+[32m+[m[32m        time.sleep(0.03)[m
+[32m+[m[41m    [m
+[32m+[m[32m    print(Style.RESET_ALL)[m
+[32m+[m[32m    time.sleep(1)[m
+ [m
+ def show_welcome_screen():[m
+[31m-    """Display welcome message and program description"""[m
+[32m+[m[32m    """Display Matrix-style animated welcome screen"""[m
+[32m+[m[41m    [m
+[32m+[m[32m    # Phase 1: Matrix digital rain[m
+[32m+[m[32m    print(f"{Fore.BLACK}", end="")[m
+[32m+[m[32m    clear_screen()[m
+[32m+[m[32m    matrix_rain()[m
+[32m+[m[41m    [m
+[32m+[m[32m    # Phase 2: System boot sequence[m
+[32m+[m[32m    clear_screen()[m
+[32m+[m[32m    boot_messages = [[m
+[32m+[m[32m        "INITIALIZING DIGITAL AUDIO PROCESSOR...",[m
+[32m+[m[32m        "LOADING SLICE ALGORITHMS...",[m
+[32m+[m[32m        "CALIBRATING SEQUENCE MATRIX...",[m
+[32m+[m[32m        "SYSTEM READY...",[m
+[32m+[m[32m    ][m
+[32m+[m[41m    [m
+[32m+[m[32m    print(f"{Fore.GREEN}")[m
+[32m+[m[32m    for message in boot_messages:[m
+[32m+[m[32m        print(f"    {message}")[m
+[32m+[m[32m        time.sleep(0.7)[m
+[32m+[m[41m    [m
+[32m+[m[32m    # Phase 3: Reveal title[m
+[32m+[m[32m    clear_screen()[m
+[32m+[m[32m    reveal_title()[m
+[32m+[m[32m    time.sleep(1)[m
+[32m+[m[41m    [m
+[32m+[m[32m    # Phase 4: Final menu[m
+[32m+[m[32m    clear_screen()[m
+     welcome_text = f"""[m
+[31m-{Fore.CYAN}╔══════════════════════════════════════════════════════════════╗{Style.RESET_ALL}[m
+[31m-{Fore.CYAN}║                 pydub-audio-slicer-sequencer                 ║{Style.RESET_ALL}[m
+[31m-{Fore.CYAN}║                     Audio Processing Tool                    ║{Style.RESET_ALL}[m
+[31m-{Fore.CYAN}╚══════════════════════════════════════════════════════════════╝{Style.RESET_ALL}[m
+[31m-[m
+[31m-{Fore.WHITE}Use this tool to:{Style.RESET_ALL}[m
+[31m-{Fore.GREEN}1 - Slice an audio file into several blocks{Style.RESET_ALL}[m
+[31m-{Fore.BLUE}2 - Sequence blocks to create an audio file{Style.RESET_ALL}  [m
+[31m-{Fore.MAGENTA}3 - Slice an audio file and produce a sequence{Style.RESET_ALL}[m
+[31m-[m
+[31m-{Fore.YELLOW}Option 1 will:{Style.RESET_ALL}[m
+[31m-• Extract 30-second audio segments centered on climax points[m
+[31m-• Apply fade in/out and normalization  [m
+[31m-• Track all slices in an Excel database[m
+[31m-• Maintain file organization and verification[m
+[31m-[m
+[31m-{Fore.YELLOW}Option 2 will:{Style.RESET_ALL}[m
+[31m-• Sequence existing blocks into a new audio file[m
+[31m-[m
+[31m-{Fore.YELLOW}Option 3 will:{Style.RESET_ALL}[m
+[31m-• Extract 30-second audio segments centered on climax points[m
+[31m-• Apply fade in/out and normalization[m
+[31m-• Automatically sequence the slices into a new audio file[m
+[31m-• Track all slices in an Excel database[m
+[32m+[m[32m{Fore.GREEN}╔══════════════════════════════════════════════════════════════╗{Style.RESET_ALL}[m
+[32m+[m[32m{Fore.GREEN}║{Fore.CYAN}                  AUDIO SLICER AND SEQUENCER                  {Fore.GREEN}║{Style.RESET_ALL}[m
+[32m+[m[32m{Fore.GREEN}║{Fore.CYAN}               DIGITAL AUDIO PROCESSING SYSTEM               {Fore.GREEN}║{Style.RESET_ALL}[m
+[32m+[m[32m{Fore.GREEN}╚══════════════════════════════════════════════════════════════╝{Style.RESET_ALL}[m
+[32m+[m
+[32m+[m[32m{Fore.GREEN}┌────────────────────────────────────────────────────────────────┐{Style.RESET_ALL}[m
+[32m+[m[32m{Fore.GREEN}│{Fore.WHITE} [1] {Fore.CYAN}█▓▒░ SLICE AUDIO    {Fore.WHITE}- Extract 30-second audio blocks   {Fore.GREEN}│{Style.RESET_ALL}[m
+[32m+[m[32m{Fore.GREEN}│{Fore.WHITE} [2] {Fore.CYAN}█▓▒░ SEQUENCE       {Fore.WHITE}- Mix blocks into new composition {Fore.GREEN}│{Style.RESET_ALL}[m
+[32m+[m[32m{Fore.GREEN}│{Fore.WHITE} [3] {Fore.CYAN}█▓▒░ SLICE+SEQUENCE {Fore.WHITE}- Full automated processing      {Fore.GREEN}│{Style.RESET_ALL}[m
+[32m+[m[32m{Fore.GREEN}└────────────────────────────────────────────────────────────────┘{Style.RESET_ALL}[m
+[32m+[m
+[32m+[m[32m{Fore.CYAN}    ██╗    ██████╗ ███████╗██████╗ ██╗   ██╗███████╗██████╗{Style.RESET_ALL}[m
+[32m+[m[32m{Fore.CYAN}    ██║    ██╔══██╗██╔════╝██╔══██╗██║   ██║██╔════╝██╔══██╗{Style.RESET_ALL}[m
+[32m+[m[32m{Fore.CYAN}    ██║    ██████╔╝█████╗  ██████╔╝██║   ██║█████╗  ██████╔╝{Style.RESET_ALL}[m
+[32m+[m[32m{Fore.CYAN}    ██║    ██╔══██╗██╔══╝  ██╔══██╗╚██╗ ██╔╝██╔══╝  ██╔══██╗{Style.RESET_ALL}[m
+[32m+[m[32m{Fore.CYAN}    ███████╗██║  ██║███████╗██║  ██║ ╚████╔╝ ███████╗██║  ██║{Style.RESET_ALL}[m
+[32m+[m[32m{Fore.CYAN}    ╚══════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝  ╚═══╝  ╚══════╝╚═╝  ╚═╝{Style.RESET_ALL}[m
+ """[m
+     print(welcome_text)[m
+     [m
+     while True:[m
+[31m-        choice = input(f"{Fore.WHITE}Select option (1, 2, or 3): {Style.RESET_ALL}").strip()[m
+[32m+[m[32m        choice = input(f"{Fore.GREEN}╔═[{Fore.CYAN}SYSTEM READY{Fore.GREEN}]══════════════════════════════════════════════╗\n"[m
+[32m+[m[32m                      f"{Fore.GREEN}║ {Fore.WHITE}ENTER SELECTION (1-3): {Style.RESET_ALL}").strip()[m
+         if choice in ['1', '2', '3']:[m
+             return choice[m
+         else:[m
+[31m-            print(f"{Fore.RED}❌ Invalid choice. Please enter 1, 2, or 3.{Style.RESET_ALL}")[m
+[32m+[m[32m            print(f"{Fore.RED}║ INVALID INPUT. SYSTEM AWAITS VALID COMMAND.           {Fore.GREEN}║{Style.RESET_ALL}")[m
+[32m+[m[32m            print(f"{Fore.GREEN}╚══════════════════════════════════════════════════════════════╝{Style.RESET_ALL}")[m
+ [m
+ def show_slice_and_sequence_menu():[m
+     """Show submenu for slice and sequence options"""[m
+[36m@@ -847,29 +936,27 @@[m [mdef main():[m
+     choice = show_welcome_screen()[m
+     [m
+     if choice == '1':[m
+[32m+[m[32m        # Your existing slice functionality[m
+         slice_choice = show_slice_options_menu()[m
+         if slice_choice == '1':[m
+             run_audio_slicer_with_labels()[m
+         elif slice_choice == '2':[m
+             no_labels_choice = show_no_labels_menu()[m
+             if no_labels_choice == '1':[m
+[31m-                print(f"{Fore.GREEN}🎯 Great! Please label your audio file in Audacity...{Style.RESET_ALL}")[m
+[32m+[m[32m                print(f"{Fore.GREEN}🎯 Please label your audio file in Audacity...{Style.RESET_ALL}")[m
+                 return[m
+             elif no_labels_choice == '2':[m
+                 run_random_slicer()[m
+[31m-                return[m
+[31m-                [m
+     elif choice == '2':[m
+[31m-        run_sequencer()  # NEW: Sequence existing blocks![m
+[31m-        return[m
+[31m-        [m
+[32m+[m[32m        # Your existing sequence functionality[m[41m  [m
+[32m+[m[32m        run_sequencer()[m
+     elif choice == '3':[m
+[32m+[m[32m        # Your existing combo functionality[m
+         sub_choice = show_slice_and_sequence_menu()[m
+         if sub_choice == '1':[m
+[31m-            print(f"{Fore.YELLOW}⚠️  Slice and sequence with labels - Under construction{Style.RESET_ALL}")[m
+[32m+[m[32m            print(f"{Fore.YELLOW}Slice and sequence with labels - Under construction{Style.RESET_ALL}")[m
+         elif sub_choice == '2':[m
+[31m-            print(f"{Fore.YELLOW}⚠️  Random slice and sequence - Under construction{Style.RESET_ALL}")[m
+[31m-        return[m
+[31m-[m
+[32m+[m[32m            print(f"{Fore.YELLOW}Random slice and sequence - Under construction{Style.RESET_ALL}")[m
+[32m+[m[41m            [m
+ if __name__ == "__main__":[m
+     main()[m
+\ No newline at end of file[m

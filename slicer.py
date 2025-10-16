@@ -125,9 +125,13 @@ def get_next_file_numbers(excel_path):
 def update_excel_file(excel_path, slice_info, file_number, output_path, origin_file):
     """Update the Excel file with new slice information"""
     try:
+        # Generate the same timestamp ID that was used for the filename
+        timestamp_id = generate_timestamp_id()
+        unique_filename = f"{slice_info['type']}{timestamp_id}"  # Changed this line
+        
         # Create DataFrames for new entries with correct column order
         new_data = {
-            slice_info['type']: [f"{slice_info['type']}{file_number}"],  # Column A: m1, v1, etc.
+            slice_info['type']: [unique_filename],  # Column A: m2005101619235540, etc.  # Changed this line
             'origin': [origin_file],  # Column B: origin path
             'description': [slice_info['description']]  # Column C: description
         }
@@ -158,11 +162,11 @@ def update_excel_file(excel_path, slice_info, file_number, output_path, origin_f
                 other_type = 'v' if slice_info['type'] == 'm' else 'm'
                 pd.DataFrame(columns=[other_type, 'origin', 'description']).to_excel(writer, sheet_name=other_type, index=False)
                 
-        print(f"{Fore.GREEN}✅ Updated Excel: {slice_info['type']}{file_number}{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}✅ Updated Excel: {unique_filename}{Style.RESET_ALL}")  # Changed this line
         
     except Exception as e:
         print(f"{Fore.RED}❌ Error updating Excel file: {e}{Style.RESET_ALL}")
-
+        
 def verify_files_vs_excel(blocks_dir, excel_path):
     """Verify that files in blocks folder match the Excel database"""
     print(f"\n{Fore.CYAN}=== Verifying Files vs Excel Database ==={Style.RESET_ALL}")
@@ -584,8 +588,9 @@ def process_audio_slice_mp3(audio, slice_info, output_folder, file_number):
         # Normalize audio
         slice_audio = normalize(slice_audio)
         
-        # Export file as MP3 192kbps
-        filename = f"{slice_info['type']}{file_number}.mp3"
+        # Generate unique timestamp-based filename
+        timestamp_id = generate_timestamp_id()
+        filename = f"{slice_info['type']}{timestamp_id}.mp3"  # Changed this line
         output_path = os.path.join(output_folder, filename)
         slice_audio.export(output_path, format="mp3", bitrate="192k")
         
@@ -596,7 +601,7 @@ def process_audio_slice_mp3(audio, slice_info, output_folder, file_number):
     except Exception as e:
         print(f"{Fore.RED}❌ Error processing slice: {e}{Style.RESET_ALL}")
         return None
-
+    
 def run_random_slicer():
     """Run random audio slicing functionality"""
     print(f"{Fore.CYAN}=== Random Audio Slicer Started ==={Style.RESET_ALL}")
@@ -775,7 +780,7 @@ def build_multi_channel_sequence(blocks_dir, m_sequence, v_sequence):
         return None
 
 def run_sequencer():
-    """Main sequencing workflow"""
+    """Main sequencing workflow - Option 2"""
     print(f"{Fore.CYAN}=== Audio Sequencer Started ==={Style.RESET_ALL}")
     print(f"{Fore.BLUE}This will create a mixed sequence with:{Style.RESET_ALL}")
     print(f"{Fore.BLUE}  • Music channel starting at 0:00{Style.RESET_ALL}")
@@ -792,22 +797,28 @@ def run_sequencer():
         print(f"{Fore.RED}❌ No blocks folder selected. Exiting.{Style.RESET_ALL}")
         return
     
-    # Scan for available blocks
-    print(f"{Fore.BLUE}Scanning for audio blocks...{Style.RESET_ALL}")
-    m_blocks, v_blocks = scan_available_blocks(blocks_dir)
+    # Ask for desired duration
+    while True:
+        try:
+            user_input = input(f"{Fore.WHITE}How many minutes of sequenced content? (Enter for all available): {Style.RESET_ALL}").strip()
+            if not user_input:
+                desired_minutes = None
+                break
+            desired_minutes = float(user_input)
+            if desired_minutes <= 0:
+                print(f"{Fore.RED}❌ Please enter a positive number{Style.RESET_ALL}")
+                continue
+            break
+        except ValueError:
+            print(f"{Fore.RED}❌ Please enter a valid number{Style.RESET_ALL}")
     
-    if not validate_sequence_requirements(m_blocks, v_blocks):
+    # Use unified sequencing function
+    success, final_audio, blocks_info = create_sequence_from_blocks(blocks_dir, desired_minutes)
+    if not success:
+        print(f"{Fore.RED}❌ Sequencing failed{Style.RESET_ALL}")
         return
     
-    # Create random sequence
-    m_sequence, v_sequence = create_random_sequence(m_blocks, v_blocks)
-    
-    # Build the audio sequence
-    final_audio = build_multi_channel_sequence(blocks_dir, m_sequence, v_sequence)
-    if not final_audio:
-        return
-    
-    # Let user choose output location and filename
+    # Let user choose output location
     print(f"{Fore.BLUE}Please choose where to save the sequence...{Style.RESET_ALL}")
     output_path = filedialog.asksaveasfilename(
         title="Save Sequence As",
@@ -824,11 +835,12 @@ def run_sequencer():
         print(f"{Fore.BLUE}Exporting sequence...{Style.RESET_ALL}")
         final_audio.export(output_path, format="mp3", bitrate="192k")
         print(f"{Fore.GREEN}✅ Sequence saved: {output_path}{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}🎵 Final duration: {len(final_audio)/1000:.1f} seconds{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}🎵 Final duration: {blocks_info['total_duration']:.1f} seconds{Style.RESET_ALL}")
         
-        # Generate timeline file - MOVED TO AFTER final_audio IS DEFINED
-        audio_duration = len(final_audio) / 1000
-        generate_sequence_timeline(output_path, blocks_dir, m_sequence, v_sequence, audio_duration)
+        # Generate timeline file
+        generate_sequence_timeline(output_path, blocks_dir, 
+                                 blocks_info['m_sequence'], blocks_info['v_sequence'], 
+                                 blocks_info['total_duration'])
         
     except Exception as e:
         print(f"{Fore.RED}❌ Error exporting sequence: {e}{Style.RESET_ALL}")
@@ -864,23 +876,48 @@ def run_slice_and_sequence_with_labels():
         print(f"{Fore.RED}❌ Audio slicing failed. Exiting.{Style.RESET_ALL}")
         return
     
-    # 4. Scan for created blocks
-    print(f"{Fore.BLUE}Step 4: Scanning for created blocks...{Style.RESET_ALL}")
+    # 4. Scan blocks and ask for desired sequence duration
+    print(f"{Fore.BLUE}Step 4: Sequence configuration...{Style.RESET_ALL}")
+
+    # First scan to see what's available
     m_blocks, v_blocks = scan_available_blocks(blocks_dir)
-    
     if not validate_sequence_requirements(m_blocks, v_blocks):
         print(f"{Fore.RED}❌ Not enough blocks for sequencing{Style.RESET_ALL}")
         return
-    
-    # 5. Create random sequence
-    m_sequence, v_sequence = create_random_sequence(m_blocks, v_blocks)
-    
-    # 6. Build the audio sequence
-    final_audio = build_multi_channel_sequence(blocks_dir, m_sequence, v_sequence)
-    if not final_audio:
-        print(f"{Fore.RED}❌ Error building audio sequence{Style.RESET_ALL}")
+
+    # Calculate maximum possible duration
+    max_blocks = min(len(m_blocks), len(v_blocks))
+    max_minutes = (max_blocks * 30) / 60
+
+    print(f"{Fore.GREEN}✅ Available: {len(m_blocks)} music + {len(v_blocks)} voice blocks{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}📊 Maximum sequence: {max_minutes:.1f} minutes{Style.RESET_ALL}")
+
+    while True:
+        try:
+            user_input = input(f"{Fore.WHITE}How many minutes? (Enter for max {max_minutes:.1f}): {Style.RESET_ALL}").strip()
+            if not user_input:
+                desired_minutes = None
+                break
+            desired_minutes = float(user_input)
+            if desired_minutes <= 0:
+                print(f"{Fore.RED}❌ Please enter a positive number{Style.RESET_ALL}")
+                continue
+            if desired_minutes > max_minutes:
+                print(f"{Fore.RED}❌ Cannot create {desired_minutes:.1f} minutes. Maximum possible is {max_minutes:.1f} minutes{Style.RESET_ALL}")
+                continue
+            break
+        except ValueError:
+            print(f"{Fore.RED}❌ Please enter a valid number{Style.RESET_ALL}")
+
+    # 5. Use unified sequencing function
+    success, final_audio, blocks_info = create_sequence_from_blocks(blocks_dir, desired_minutes)
+    if not success:
+        print(f"{Fore.RED}❌ Sequencing failed{Style.RESET_ALL}")
         return
-    
+
+    # Update variables for the rest of the function
+    m_sequence = blocks_info['m_sequence']
+    v_sequence = blocks_info['v_sequence']
     # 7. Let user choose output location
     print(f"{Fore.BLUE}Step 5: Save final sequence...{Style.RESET_ALL}")
     output_path = filedialog.asksaveasfilename(
@@ -898,8 +935,7 @@ def run_slice_and_sequence_with_labels():
         print(f"{Fore.BLUE}Exporting final sequence...{Style.RESET_ALL}")
         final_audio.export(output_path, format="mp3", bitrate="192k")
         print(f"{Fore.GREEN}✅ Final sequence saved: {output_path}{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}🎵 Final duration: {len(final_audio)/1000:.1f} seconds{Style.RESET_ALL}")
-        
+        print(f"{Fore.GREEN}🎵 Final duration: {blocks_info['total_duration']:.1f} seconds{Style.RESET_ALL}")
         # Generate timeline file
         audio_duration = len(final_audio) / 1000
         generate_sequence_timeline(output_path, blocks_dir, m_sequence, v_sequence, audio_duration)
@@ -1238,25 +1274,19 @@ def generate_random_slices_and_sequence():
         
         print(f"{Fore.GREEN}✅ Audio slicing completed!{Style.RESET_ALL}")
         
-        # 9. Automatically run sequencing
+        # 9. Automatically run sequencing using the unified function
         print(f"{Fore.BLUE}Step 4: Sequencing slices...{Style.RESET_ALL}")
-        
-        # Scan for the blocks we just created
-        m_blocks, v_blocks = scan_available_blocks(blocks_dir)
-        
-        if not validate_sequence_requirements(m_blocks, v_blocks):
-            print(f"{Fore.YELLOW}⚠️  Not enough blocks for sequencing, but slicing completed successfully{Style.RESET_ALL}")
-            return
-        
-        # Create random sequence
-        m_sequence, v_sequence = create_random_sequence(m_blocks, v_blocks)
-        
-        # Build the audio sequence
-        final_audio = build_multi_channel_sequence(blocks_dir, m_sequence, v_sequence)
-        if not final_audio:
+
+        # Use the unified sequencing function with the desired minutes
+        success, final_audio, blocks_info = create_sequence_from_blocks(blocks_dir, requested_minutes)
+        if not success:
             print(f"{Fore.YELLOW}⚠️  Sequencing failed, but slicing completed successfully{Style.RESET_ALL}")
             return
-        
+
+        # Update variables for the rest of the function
+        m_sequence = blocks_info['m_sequence']
+        v_sequence = blocks_info['v_sequence']
+
         # 10. Let user choose sequence output location
         print(f"{Fore.BLUE}Step 5: Save final sequence...{Style.RESET_ALL}")
         output_path = filedialog.asksaveasfilename(
@@ -1275,12 +1305,13 @@ def generate_random_slices_and_sequence():
         print(f"{Fore.GREEN}🎵 Final duration: {len(final_audio)/1000:.1f} seconds{Style.RESET_ALL}")
         
         # Generate timeline file
-        audio_duration = len(final_audio) / 1000
-        generate_sequence_timeline(output_path, blocks_dir, m_sequence, v_sequence, audio_duration)
+        generate_sequence_timeline(output_path, blocks_dir, m_sequence, v_sequence, blocks_info['total_duration'])
         
         print(f"{Fore.CYAN}=== Option 3 → Option 2 Workflow Completed ==={Style.RESET_ALL}")
-        print(f"{Fore.GREEN}🎉 Successfully created {requested_minutes:.1f} minutes of sequenced content!{Style.RESET_ALL}")
-        
+        # Calculate actual duration created
+        actual_minutes = blocks_info['total_duration'] / 60
+        print(f"{Fore.GREEN}🎉 Successfully created {actual_minutes:.1f} minutes of sequenced content!{Style.RESET_ALL}")
+
     finally:
         # Clean up temporary file
         if os.path.exists(temp_txt_path):
@@ -1312,6 +1343,116 @@ def run_audio_slicer_with_labels():
         print(f"{Fore.GREEN}✅ Audio slicing completed successfully!{Style.RESET_ALL}")
     else:
         print(f"{Fore.RED}❌ Audio slicing failed.{Style.RESET_ALL}")
+
+def generate_timestamp_id():
+    """Generate a unique timestamp ID in format YYYYMMDDHHMMSSCC"""
+    from datetime import datetime
+    now = datetime.now()
+    return now.strftime("%Y%m%d%H%M%S") + f"{now.microsecond // 10000:02d}"
+
+def create_sequence_from_blocks(blocks_dir, desired_minutes=None):
+    """
+    Core sequencing function used by both Option 2 and Option 3.2
+    If desired_minutes is None, use all available blocks
+    Returns: success (bool), final_audio (AudioSegment), selected_blocks_info (dict)
+    """
+    print(f"{Fore.CYAN}=== Creating Audio Sequence ==={Style.RESET_ALL}")
+    
+    # Scan for available blocks
+    print(f"{Fore.BLUE}Scanning for audio blocks...{Style.RESET_ALL}")
+    m_blocks, v_blocks = scan_available_blocks(blocks_dir)
+    
+    if not validate_sequence_requirements(m_blocks, v_blocks):
+        return False, None, None
+    
+    # Calculate how many blocks to use
+    # Calculate how many blocks to use
+    if desired_minutes is not None:
+        blocks_needed = int((desired_minutes * 60) / 30)  # 30-second blocks
+        blocks_to_use = min(blocks_needed, len(m_blocks), len(v_blocks))
+        
+        # Calculate actual achievable duration
+        achievable_minutes = (blocks_to_use * 30) / 60
+        
+        if blocks_to_use < blocks_needed:
+            print(f"{Fore.YELLOW}⚠️  Warning: Cannot create {desired_minutes} minutes{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}   Only {blocks_to_use} blocks available (max {achievable_minutes:.1f} minutes){Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}   Creating {achievable_minutes:.1f} minute sequence instead{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.BLUE}Using {blocks_to_use} blocks from each channel for {desired_minutes} minute sequence{Style.RESET_ALL}")
+    
+    # Create random sequences
+    m_sequence, v_sequence = create_random_sequence(m_blocks, v_blocks)
+    
+    # Trim to desired length if specified
+    if desired_minutes is not None:
+        m_sequence = m_sequence[:blocks_to_use]
+        v_sequence = v_sequence[:blocks_to_use]
+        print(f"{Fore.GREEN}Selected {blocks_to_use} blocks from each channel{Style.RESET_ALL}")
+    
+    # Build the audio sequence
+    final_audio = build_multi_channel_sequence(blocks_dir, m_sequence, v_sequence)
+    if not final_audio:
+        return False, None, None
+    
+    # Prepare return info
+    selected_blocks_info = {
+        'm_sequence': m_sequence,
+        'v_sequence': v_sequence,
+        'blocks_dir': blocks_dir,
+        'total_duration': len(final_audio) / 1000
+    }
+    
+    return True, final_audio, selected_blocks_info
+
+def create_sequence_from_blocks(blocks_dir, desired_minutes=None):
+    """
+    Core sequencing function used by both Option 2 and Option 3.2
+    If desired_minutes is None, use all available blocks
+    Returns: success (bool), final_audio (AudioSegment), selected_blocks_info (dict)
+    """
+    print(f"{Fore.CYAN}=== Creating Audio Sequence ==={Style.RESET_ALL}")
+    
+    # Scan for available blocks
+    print(f"{Fore.BLUE}Scanning for audio blocks...{Style.RESET_ALL}")
+    m_blocks, v_blocks = scan_available_blocks(blocks_dir)
+    
+    if not validate_sequence_requirements(m_blocks, v_blocks):
+        return False, None, None
+    
+    # Calculate how many blocks to use
+    if desired_minutes is not None:
+        blocks_needed = int((desired_minutes * 60) / 30)  # 30-second blocks
+        # Use minimum of available blocks and needed blocks
+        blocks_to_use = min(blocks_needed, len(m_blocks), len(v_blocks))
+        print(f"{Fore.BLUE}Using {blocks_to_use} blocks from each channel for {desired_minutes} minute sequence{Style.RESET_ALL}")
+    else:
+        blocks_to_use = min(len(m_blocks), len(v_blocks))
+        print(f"{Fore.BLUE}Using all available blocks: {blocks_to_use} from each channel{Style.RESET_ALL}")
+    
+    # Create random sequences
+    m_sequence, v_sequence = create_random_sequence(m_blocks, v_blocks)
+    
+    # Trim to desired length if specified
+    if desired_minutes is not None:
+        m_sequence = m_sequence[:blocks_to_use]
+        v_sequence = v_sequence[:blocks_to_use]
+        print(f"{Fore.GREEN}Selected {blocks_to_use} blocks from each channel{Style.RESET_ALL}")
+    
+    # Build the audio sequence
+    final_audio = build_multi_channel_sequence(blocks_dir, m_sequence, v_sequence)
+    if not final_audio:
+        return False, None, None
+    
+    # Prepare return info
+    selected_blocks_info = {
+        'm_sequence': m_sequence,
+        'v_sequence': v_sequence,
+        'blocks_dir': blocks_dir,
+        'total_duration': len(final_audio) / 1000
+    }
+    
+    return True, final_audio, selected_blocks_info
 
 def main():
     choice = show_welcome_screen()
