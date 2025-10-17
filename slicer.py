@@ -962,7 +962,7 @@ def run_slice_and_sequence_with_labels():
         return
     
     print(f"{Fore.CYAN}=== Slice & Sequence Workflow Completed ==={Style.RESET_ALL}")
-    
+
 def generate_sequence_timeline(sequence_path, blocks_dir, m_sequence, v_sequence, audio_duration):
     """Generate a timeline text file for the created sequence"""
     try:
@@ -987,11 +987,15 @@ def generate_sequence_timeline(sequence_path, blocks_dir, m_sequence, v_sequence
         # Create blocks used string
         blocks_used = ", ".join([f"{cat}={count}" for cat, count in sorted(block_counts.items())])
         
-        # Read descriptions from Excel
-        excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
+        # Initialize metadata dictionaries
         descriptions = {}
+        origins = {}
+        
+        # Read metadata from Excel first, then fall back to MP3 metadata
+        excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
+        
+        # Try to read from Excel first
         try:
-            # Try to read all sheets and build description mapping
             for category in block_counts.keys():
                 try:
                     df = pd.read_excel(excel_path, sheet_name=category)
@@ -1000,11 +1004,35 @@ def generate_sequence_timeline(sequence_path, blocks_dir, m_sequence, v_sequence
                             if pd.notna(row[category]):
                                 filename = row[category]
                                 desc = row.get('description', 'No description')
+                                origin = row.get('origin', 'Unknown origin')
                                 descriptions[filename] = desc
+                                origins[filename] = origin
                 except:
                     continue
         except Exception as e:
-            print(f"{Fore.YELLOW}⚠️  Could not read Excel for descriptions: {e}{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}⚠️  Could not read Excel for metadata: {e}{Style.RESET_ALL}")
+        
+        # Fall back to MP3 metadata for any files still missing descriptions or origins
+        for block in m_sequence + v_sequence:
+            block_name = os.path.splitext(block)[0]
+            
+            # Check if we need to get metadata from MP3
+            if (block_name not in descriptions or 
+                descriptions.get(block_name) == 'No description' or
+                block_name not in origins or 
+                origins.get(block_name) == 'Unknown origin'):
+                
+                # Try to read from MP3 metadata
+                mp3_path = os.path.join(blocks_dir, block)
+                if os.path.exists(mp3_path):
+                    metadata = read_audio_metadata(mp3_path)
+                    if metadata:
+                        if metadata.get('description'):
+                            descriptions[block_name] = metadata['description']
+                            print(f"{Fore.BLUE}   📝 Read description from MP3: {block} -> '{metadata['description']}'{Style.RESET_ALL}")
+                        if metadata.get('origin'):
+                            origins[block_name] = metadata['origin']
+                            print(f"{Fore.BLUE}   📁 Read origin from MP3: {block} -> '{metadata['origin']}'{Style.RESET_ALL}")
         
         # Build timeline entries with interleaved music and voice
         timeline_entries = []
@@ -1020,12 +1048,14 @@ def generate_sequence_timeline(sequence_path, blocks_dir, m_sequence, v_sequence
             music_block = m_sequence[i]
             music_name = os.path.splitext(music_block)[0]
             music_desc = descriptions.get(music_name, 'No description')
+            music_origin = origins.get(music_name, 'Unknown origin')
             
             timeline_entries.append({
                 'time': music_time,
                 'time_str': music_time_str,
                 'block': music_name,
-                'description': music_desc
+                'description': music_desc,
+                'origin': music_origin
             })
             
             # Voice block start time (15 seconds after corresponding music)
@@ -1038,12 +1068,14 @@ def generate_sequence_timeline(sequence_path, blocks_dir, m_sequence, v_sequence
                 voice_block = v_sequence[i]
                 voice_name = os.path.splitext(voice_block)[0]
                 voice_desc = descriptions.get(voice_name, 'No description')
+                voice_origin = origins.get(voice_name, 'Unknown origin')
                 
                 timeline_entries.append({
                     'time': voice_time,
                     'time_str': voice_time_str,
                     'block': voice_name,
-                    'description': voice_desc
+                    'description': voice_desc,
+                    'origin': voice_origin
                 })
         
         # Sort all entries by time
@@ -1058,15 +1090,17 @@ def generate_sequence_timeline(sequence_path, blocks_dir, m_sequence, v_sequence
             f.write(f"Blocks used: {blocks_used}\n\n")
             
             for entry in timeline_entries:
-                f.write(f"{entry['time_str']} / {entry['block']} / {entry['description']}\n")
+                f.write(f"{entry['time_str']} / {entry['block']} / {entry['description']} / {entry['origin']}\n")
         
         print(f"{Fore.GREEN}✅ Timeline saved: {txt_path}{Style.RESET_ALL}")
         return True
         
     except Exception as e:
         print(f"{Fore.RED}❌ Error generating timeline: {e}{Style.RESET_ALL}")
+        import traceback
+        print(f"{Fore.RED}Detailed error: {traceback.format_exc()}{Style.RESET_ALL}")
         return False
-
+           
 def calculate_max_possible_minutes(audio_duration_seconds, slice_duration=30, min_spacing=60):
     """
     Calculate maximum minutes of content that can be extracted with proper spacing
@@ -1501,7 +1535,7 @@ def write_audio_metadata(file_path, origin, description, audio_type, climax_time
         return False
 
 def read_audio_metadata(file_path):
-    """Read metadata from MP3 file"""
+    """Read metadata from MP3 file, including parsing the Origin comment field"""
     try:
         audiofile = eyed3.load(file_path)
         if audiofile.tag is None:
@@ -1515,25 +1549,46 @@ def read_audio_metadata(file_path):
         }
         
         # Read from user text frames
-        origin_frame = audiofile.tag.user_text_frames.get("ORIGIN_FILE")
-        desc_frame = audiofile.tag.user_text_frames.get("DESCRIPTION")
-        type_frame = audiofile.tag.user_text_frames.get("AUDIO_TYPE")
-        time_frame = audiofile.tag.user_text_frames.get("CLIMAX_TIME")
+        for frame in audiofile.tag.user_text_frames:
+            # The frame.description contains the field name, frame.text contains the value
+            if frame.description == "ORIGIN_FILE":
+                metadata['origin'] = frame.text
+            elif frame.description == "DESCRIPTION":
+                metadata['description'] = frame.text
+            elif frame.description == "AUDIO_TYPE":
+                metadata['audio_type'] = frame.text
+            elif frame.description == "CLIMAX_TIME":
+                metadata['climax_time'] = frame.text
         
-        if origin_frame:
-            metadata['origin'] = origin_frame.text
-        if desc_frame:
-            metadata['description'] = desc_frame.text
-        if type_frame:
-            metadata['audio_type'] = type_frame.text
-        if time_frame:
-            metadata['climax_time'] = time_frame.text
-            
+        # If we still don't have origin or description, try to parse from the Comment field
+        if (not metadata['origin'] or not metadata['description']) and audiofile.tag.comments:
+            for comment in audiofile.tag.comments:
+                comment_text = comment.text
+                # Parse the format: "Origin: [path] | Description: [desc] | Climax: [time]s | Type: [type]"
+                if "Origin: " in comment_text and "Description: " in comment_text:
+                    try:
+                        import re
+                        # Extract origin
+                        if not metadata['origin']:
+                            origin_match = re.search(r'Origin: ([^|]+)', comment_text)
+                            if origin_match:
+                                metadata['origin'] = origin_match.group(1).strip()
+                        
+                        # Extract description
+                        if not metadata['description']:
+                            desc_match = re.search(r'Description: ([^|]+?)(?:\s*\||$)', comment_text)
+                            if desc_match:
+                                desc = desc_match.group(1).strip()
+                                metadata['description'] = desc
+                    except Exception as e:
+                        print(f"{Fore.YELLOW}⚠️  Error parsing comment: {e}{Style.RESET_ALL}")
+        
         return metadata
+        
     except Exception as e:
         print(f"{Fore.RED}❌ Error reading metadata from {file_path}: {e}{Style.RESET_ALL}")
         return None
-    
+           
 def verify_audio_metadata(blocks_dir):
     """Verify that all audio files have proper metadata"""
     print(f"\n{Fore.CYAN}=== Verifying Audio File Metadata ==={Style.RESET_ALL}")
@@ -1573,7 +1628,47 @@ def verify_audio_metadata(blocks_dir):
     except Exception as e:
         print(f"{Fore.RED}❌ Error verifying metadata: {e}{Style.RESET_ALL}")
         return False
+
+def debug_metadata(blocks_dir, m_sequence, v_sequence):
+    """Debug function to check what metadata is available in the files"""
+    print(f"{Fore.CYAN}=== Debugging Metadata ==={Style.RESET_ALL}")
+    
+    all_blocks = m_sequence + v_sequence
+    for block in all_blocks:
+        block_path = os.path.join(blocks_dir, block)
+        print(f"\n{Fore.YELLOW}Checking: {block}{Style.RESET_ALL}")
         
+        # Check if file exists
+        if not os.path.exists(block_path):
+            print(f"{Fore.RED}❌ File does not exist{Style.RESET_ALL}")
+            continue
+            
+        # Try to read with eyed3
+        try:
+            audiofile = eyed3.load(block_path)
+            if audiofile.tag is None:
+                print(f"{Fore.RED}❌ No ID3 tag found{Style.RESET_ALL}")
+                continue
+                
+            print(f"{Fore.GREEN}✅ Has ID3 tag{Style.RESET_ALL}")
+            
+            # Check user text frames
+            print("User Text Frames:")
+            for frame in audiofile.tag.user_text_frames:
+                print(f"  - {frame.description}: {frame.text}")
+            
+            # Check comments
+            print("Comments:")
+            for comment in audiofile.tag.comments:
+                print(f"  - {comment.text}")
+                
+            # Check our specific function
+            metadata = read_audio_metadata(block_path)
+            print(f"Parsed metadata: {metadata}")
+            
+        except Exception as e:
+            print(f"{Fore.RED}❌ Error reading file: {e}{Style.RESET_ALL}")
+
 def main():
     choice = show_welcome_screen()
     
