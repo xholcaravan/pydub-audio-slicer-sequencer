@@ -13,6 +13,8 @@ from tkinter import filedialog, messagebox
 import sys
 from colorama import Fore, Back, Style, init
 import random
+import eyed3
+from eyed3.id3.frames import ImageFrame
 # Initialize colorama (this makes colors work on Windows too)
 init()
 
@@ -464,7 +466,7 @@ def slice_audio_from_labels(audio_file, blocks_dir):
             continue
         
         # Process the slice as MP3
-        output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, file_number)
+        output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, file_number, audio_file)
         if output_path:
             # Update Excel file
             update_excel_file(excel_path, slice_info, file_number, output_path, audio_file)
@@ -567,8 +569,8 @@ def generate_random_labels(audio_file):
         print(f"{Fore.RED}❌ Error generating random labels: {e}{Style.RESET_ALL}")
         return None
 
-def process_audio_slice_mp3(audio, slice_info, output_folder, file_number):
-    """Process a single audio slice and export as MP3 192kbps"""
+def process_audio_slice_mp3(audio, slice_info, output_folder, file_number, origin_file):
+    """Process a single audio slice and export as MP3 192kbps with metadata"""
     try:
         # Convert times to milliseconds
         begin_ms = int(slice_info['slice_begin'] * 1000)
@@ -590,18 +592,33 @@ def process_audio_slice_mp3(audio, slice_info, output_folder, file_number):
         
         # Generate unique timestamp-based filename
         timestamp_id = generate_timestamp_id()
-        filename = f"{slice_info['type']}{timestamp_id}.mp3"  # Changed this line
+        filename = f"{slice_info['type']}{timestamp_id}.mp3"
         output_path = os.path.join(output_folder, filename)
+        
+        # Export audio
         slice_audio.export(output_path, format="mp3", bitrate="192k")
         
-        print(f"{Fore.GREEN}✅ Successfully created: {filename}{Style.RESET_ALL}")
+        # Write metadata to the MP3 file
+        metadata_success = write_audio_metadata(
+            output_path, 
+            origin_file, 
+            slice_info['description'], 
+            slice_info['type'], 
+            slice_info['climax_time']
+        )
+        
+        if metadata_success:
+            print(f"{Fore.GREEN}✅ Successfully created: {filename} (with metadata){Style.RESET_ALL}")
+        else:
+            print(f"{Fore.GREEN}✅ Successfully created: {filename} (metadata failed){Style.RESET_ALL}")
+        
         print(f"{Fore.BLUE}   (from {slice_info['slice_begin']:.1f}s to {slice_info['slice_end']:.1f}s){Style.RESET_ALL}")
         return output_path
         
     except Exception as e:
         print(f"{Fore.RED}❌ Error processing slice: {e}{Style.RESET_ALL}")
         return None
-    
+        
 def run_random_slicer():
     """Run random audio slicing functionality"""
     print(f"{Fore.CYAN}=== Random Audio Slicer Started ==={Style.RESET_ALL}")
@@ -671,7 +688,7 @@ def run_random_slicer():
             continue
         
         # Process the slice as MP3
-        output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, file_number)
+        output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, file_number, audio_file)
         if output_path:
             # Update Excel file
             update_excel_file(excel_path, slice_info, file_number, output_path, audio_file)
@@ -1263,7 +1280,7 @@ def generate_random_slices_and_sequence():
                 continue
             
             # Process the slice as MP3 (reuse your existing function)
-            output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, file_number)
+            output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, file_number, audio_file)
             if output_path:
                 # Update Excel file (reuse your existing function)
                 update_excel_file(excel_path, slice_info, file_number, output_path, audio_file)
@@ -1454,6 +1471,109 @@ def create_sequence_from_blocks(blocks_dir, desired_minutes=None):
     
     return True, final_audio, selected_blocks_info
 
+def write_audio_metadata(file_path, origin, description, audio_type, climax_time):
+    """Write metadata to MP3 file including origin and description"""
+    try:
+        audiofile = eyed3.load(file_path)
+        if audiofile.tag is None:
+            audiofile.initTag()
+        
+        # Set basic metadata
+        audiofile.tag.artist = f"Audio Slicer - {audio_type}"
+        audiofile.tag.album = "Audio Blocks"
+        audiofile.tag.title = f"{audio_type} block - {description[:50]}"
+        
+        # Add comments with our custom data
+        audiofile.tag.comments.set(f"Origin: {origin} | Description: {description} | Climax: {climax_time}s | Type: {audio_type}")
+
+        # Use custom user text frames for structured data
+        audiofile.tag.user_text_frames.set("ORIGIN_FILE", origin)
+        audiofile.tag.user_text_frames.set("DESCRIPTION", description)
+        audiofile.tag.user_text_frames.set("AUDIO_TYPE", audio_type)
+        audiofile.tag.user_text_frames.set("CLIMAX_TIME", str(climax_time))
+        audiofile.tag.user_text_frames.set("SLICE_SIZE", str(SLICE_SIZE))
+        
+        audiofile.tag.save()
+        print(f"{Fore.BLUE}   📝 Metadata written: origin, description, type{Style.RESET_ALL}")
+        return True
+    except Exception as e:
+        print(f"{Fore.YELLOW}⚠️  Could not write metadata to {file_path}: {e}{Style.RESET_ALL}")
+        return False
+
+def read_audio_metadata(file_path):
+    """Read metadata from MP3 file"""
+    try:
+        audiofile = eyed3.load(file_path)
+        if audiofile.tag is None:
+            return None
+        
+        metadata = {
+            'origin': None,
+            'description': None, 
+            'audio_type': None,
+            'climax_time': None
+        }
+        
+        # Read from user text frames
+        origin_frame = audiofile.tag.user_text_frames.get("ORIGIN_FILE")
+        desc_frame = audiofile.tag.user_text_frames.get("DESCRIPTION")
+        type_frame = audiofile.tag.user_text_frames.get("AUDIO_TYPE")
+        time_frame = audiofile.tag.user_text_frames.get("CLIMAX_TIME")
+        
+        if origin_frame:
+            metadata['origin'] = origin_frame.text
+        if desc_frame:
+            metadata['description'] = desc_frame.text
+        if type_frame:
+            metadata['audio_type'] = type_frame.text
+        if time_frame:
+            metadata['climax_time'] = time_frame.text
+            
+        return metadata
+    except Exception as e:
+        print(f"{Fore.RED}❌ Error reading metadata from {file_path}: {e}{Style.RESET_ALL}")
+        return None
+    
+def verify_audio_metadata(blocks_dir):
+    """Verify that all audio files have proper metadata"""
+    print(f"\n{Fore.CYAN}=== Verifying Audio File Metadata ==={Style.RESET_ALL}")
+    
+    try:
+        all_files = os.listdir(blocks_dir)
+        audio_files = [f for f in all_files if f.endswith('.mp3')]
+        
+        if not audio_files:
+            print(f"{Fore.YELLOW}⚠️  No MP3 files found in {blocks_dir}{Style.RESET_ALL}")
+            return
+        
+        metadata_count = 0
+        missing_metadata = []
+        
+        for audio_file in audio_files:
+            file_path = os.path.join(blocks_dir, audio_file)
+            metadata = read_audio_metadata(file_path)
+            
+            if metadata and metadata.get('origin') and metadata.get('description'):
+                metadata_count += 1
+                print(f"{Fore.GREEN}   ✅ {audio_file}: has metadata{Style.RESET_ALL}")
+            else:
+                missing_metadata.append(audio_file)
+                print(f"{Fore.YELLOW}   ⚠️  {audio_file}: missing metadata{Style.RESET_ALL}")
+        
+        print(f"\n{Fore.CYAN}--- Metadata Summary ---{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}✅ Files with complete metadata: {metadata_count}/{len(audio_files)}{Style.RESET_ALL}")
+        
+        if missing_metadata:
+            print(f"{Fore.YELLOW}⚠️  Files missing metadata: {len(missing_metadata)}{Style.RESET_ALL}")
+            for file in missing_metadata:
+                print(f"   - {file}")
+                
+        return metadata_count == len(audio_files)
+        
+    except Exception as e:
+        print(f"{Fore.RED}❌ Error verifying metadata: {e}{Style.RESET_ALL}")
+        return False
+        
 def main():
     choice = show_welcome_screen()
     
