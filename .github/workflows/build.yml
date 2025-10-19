@@ -33,16 +33,11 @@ jobs:
     - name: Install Python dependencies
       run: |
         pip install --upgrade pip
-        # Use specific compatible versions for macOS
-        if [ "${{ matrix.os }}" = "macos-latest" ]; then
-          pip install numpy==1.24.3 pandas==2.0.3
-        fi
         pip install -r requirements.txt
         pip install pyinstaller
     
     - name: Build executable
-      run: |
-        pyinstaller --onefile slicer.py
+      run: pyinstaller --onefile slicer.py
         
     - name: Rename Linux/macOS executable
       if: matrix.os != 'windows-latest'
@@ -50,7 +45,7 @@ jobs:
       
     - name: Rename Windows executable  
       if: matrix.os == 'windows-latest'
-      run: mv dist/slicer.exe dist/${{ matrix.artifact }}
+      run: move dist\slicer.exe dist\${{ matrix.artifact }}
     
     - name: Upload artifact
       uses: actions/upload-artifact@v4
