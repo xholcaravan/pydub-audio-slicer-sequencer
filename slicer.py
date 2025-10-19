@@ -70,6 +70,11 @@ def parse_audio_txt(file_path, audio_duration=None):
                     audio_type = parts[2].split()[0]
                     description = ' '.join(parts[2].split()[1:])
                     
+                    # Validate audio type
+                    if audio_type not in ['m', 'v', 'j']:
+                        print(f"{Fore.YELLOW}⚠️  Warning: Line {line_num} has unknown audio type '{audio_type}'. Skipping.{Style.RESET_ALL}")
+                        continue
+                    
                     slice_begin = climax_time - (SLICE_SIZE / 2)
                     slice_end = climax_time + (SLICE_SIZE / 2)
                     
@@ -105,44 +110,46 @@ def parse_audio_txt(file_path, audio_duration=None):
     return slices
 
 def get_next_file_numbers(excel_path):
-    """Get the next file numbers for m and v types from Excel file"""
+    """Get the next file numbers for m, v, and j types from Excel file"""
     try:
         # Try to read existing Excel file
         m_df = pd.read_excel(excel_path, sheet_name='m')
         v_df = pd.read_excel(excel_path, sheet_name='v')
+        j_df = pd.read_excel(excel_path, sheet_name='j')
         
         next_m = len(m_df) + 1 if not m_df.empty else 1
         next_v = len(v_df) + 1 if not v_df.empty else 1
+        next_j = len(j_df) + 1 if not j_df.empty else 1
         
     except FileNotFoundError:
         # If file doesn't exist, start from 1
         print(f"{Fore.YELLOW}⚠️  blocks_list.xlsx not found, creating new file...{Style.RESET_ALL}")
-        next_m, next_v = 1, 1
+        next_m, next_v, next_j = 1, 1, 1
     except Exception as e:
         print(f"{Fore.RED}❌ Error reading Excel file: {e}{Style.RESET_ALL}")
-        next_m, next_v = 1, 1
+        next_m, next_v, next_j = 1, 1, 1
     
-    return next_m, next_v
+    return next_m, next_v, next_j
 
 def update_excel_file(excel_path, slice_info, file_number, output_path, origin_file):
     """Update the Excel file with new slice information"""
     try:
         # Generate the same timestamp ID that was used for the filename
         timestamp_id = generate_timestamp_id()
-        unique_filename = f"{slice_info['type']}{timestamp_id}"  # Changed this line
+        unique_filename = f"{slice_info['type']}{timestamp_id}"
         
         # Create DataFrames for new entries with correct column order
         new_data = {
-            slice_info['type']: [unique_filename],  # Column A: m2005101619235540, etc.  # Changed this line
-            'origin': [origin_file],  # Column B: origin path
-            'description': [slice_info['description']]  # Column C: description
+            slice_info['type']: [unique_filename],
+            'origin': [origin_file],
+            'description': [slice_info['description']]
         }
         new_df = pd.DataFrame(new_data)
         
         # Try to read existing file or create new one
         try:
             with pd.ExcelWriter(excel_path, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
-                sheet_name = slice_info['type']  # 'm' or 'v'
+                sheet_name = slice_info['type']  # 'm', 'v', or 'j'
                 
                 # Read existing sheet
                 try:
@@ -160,11 +167,12 @@ def update_excel_file(excel_path, slice_info, file_number, output_path, origin_f
             # Create new Excel file
             with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
                 new_df.to_excel(writer, sheet_name=slice_info['type'], index=False)
-                # Create empty sheet for the other type
-                other_type = 'v' if slice_info['type'] == 'm' else 'm'
-                pd.DataFrame(columns=[other_type, 'origin', 'description']).to_excel(writer, sheet_name=other_type, index=False)
+                # Create empty sheets for the other types
+                other_types = ['v', 'j'] if slice_info['type'] == 'm' else ['m', 'j'] if slice_info['type'] == 'v' else ['m', 'v']
+                for other_type in other_types:
+                    pd.DataFrame(columns=[other_type, 'origin', 'description']).to_excel(writer, sheet_name=other_type, index=False)
                 
-        print(f"{Fore.GREEN}✅ Updated Excel: {unique_filename}{Style.RESET_ALL}")  # Changed this line
+        print(f"{Fore.GREEN}✅ Updated Excel: {unique_filename}{Style.RESET_ALL}")
         
     except Exception as e:
         print(f"{Fore.RED}❌ Error updating Excel file: {e}{Style.RESET_ALL}")
@@ -177,24 +185,29 @@ def verify_files_vs_excel(blocks_dir, excel_path):
         # Read Excel sheets
         m_df = pd.read_excel(excel_path, sheet_name='m')
         v_df = pd.read_excel(excel_path, sheet_name='v')
+        j_df = pd.read_excel(excel_path, sheet_name='j')
         
         # Get all files in blocks directory
         all_files = os.listdir(blocks_dir)
-        # Look for both WAV and MP3 files
         audio_files = [f for f in all_files if f.endswith('.wav') or f.endswith('.mp3')]
         
-        # Extract m and v files from folder
-        m_files_folder = [f for f in audio_files if f.startswith('m') and f[1:].split('.')[0].isdigit()]
-        v_files_folder = [f for f in audio_files if f.startswith('v') and f[1:].split('.')[0].isdigit()]
+        # Extract m, v, and j files from folder
+        m_files_folder = [f for f in audio_files if f.startswith('m')]
+        v_files_folder = [f for f in audio_files if f.startswith('v')]
+        j_files_folder = [f for f in audio_files if f.startswith('j')]
         
-        # Get file names from Excel (remove file extension for comparison)
+        # Get file names from Excel
         m_files_excel = []
         if not m_df.empty and 'm' in m_df.columns:
-            m_files_excel = [f"{row['m']}.mp3" for _, row in m_df.iterrows() if pd.notna(row['m'])]  # Changed to .mp3
+            m_files_excel = [f"{row['m']}.mp3" for _, row in m_df.iterrows() if pd.notna(row['m'])]
         
         v_files_excel = []
         if not v_df.empty and 'v' in v_df.columns:
-            v_files_excel = [f"{row['v']}.mp3" for _, row in v_df.iterrows() if pd.notna(row['v'])]  # Changed to .mp3
+            v_files_excel = [f"{row['v']}.mp3" for _, row in v_df.iterrows() if pd.notna(row['v'])]
+        
+        j_files_excel = []
+        if not j_df.empty and 'j' in j_df.columns:
+            j_files_excel = [f"{row['j']}.mp3" for _, row in j_df.iterrows() if pd.notna(row['j'])]
         
         # Compare Music files (m)
         print(f"\n{Fore.CYAN}--- Music Files (m) ---{Style.RESET_ALL}")
@@ -240,10 +253,32 @@ def verify_files_vs_excel(blocks_dir, excel_path):
         
         print(f"Total in Excel: {len(v_files_excel)}, Total in folder: {len(v_files_folder)}")
         
+        # Compare Jingles files (j)
+        print(f"\n{Fore.CYAN}--- Jingles Files (j) ---{Style.RESET_ALL}")
+        j_folder_set = set(j_files_folder)
+        j_excel_set = set(j_files_excel)
+        
+        missing_in_folder = j_excel_set - j_folder_set
+        missing_in_excel = j_folder_set - j_excel_set
+        
+        if not missing_in_folder and not missing_in_excel:
+            print(f"{Fore.GREEN}✅ Perfect match! All Excel records have corresponding files{Style.RESET_ALL}")
+        else:
+            if missing_in_folder:
+                print(f"{Fore.RED}❌ Files in Excel but missing in folder:{Style.RESET_ALL}")
+                for file in sorted(missing_in_folder):
+                    print(f"   - {file}")
+            if missing_in_excel:
+                print(f"{Fore.RED}❌ Files in folder but missing in Excel:{Style.RESET_ALL}")
+                for file in sorted(missing_in_excel):
+                    print(f"   - {file}")
+        
+        print(f"Total in Excel: {len(j_files_excel)}, Total in folder: {len(j_files_folder)}")
+        
         # Summary
         print(f"\n{Fore.CYAN}--- Summary ---{Style.RESET_ALL}")
-        total_excel = len(m_files_excel) + len(v_files_excel)
-        total_folder = len(m_files_folder) + len(v_files_folder)
+        total_excel = len(m_files_excel) + len(v_files_excel) + len(j_files_excel)
+        total_folder = len(m_files_folder) + len(v_files_folder) + len(j_files_folder)
         print(f"Total files in Excel: {total_excel}")
         print(f"Total files in folder: {total_folder}")
         
@@ -262,10 +297,8 @@ def get_corresponding_txt_file(audio_file):
     if not audio_file:
         return None
     
-    # Replace audio extension with .txt
     base_name = os.path.splitext(audio_file)[0]
     txt_file = base_name + '.txt'
-    
     return txt_file
 
 def verify_files_exist(audio_file, txt_file):
@@ -409,10 +442,8 @@ def show_no_labels_menu():
 
 def slice_audio_from_labels(audio_file, blocks_dir):
     """Slice audio file using labels and return the blocks directory"""
-    # Get corresponding txt file FIRST - THIS MUST BE AT THE BEGINNING
     txt_file = get_corresponding_txt_file(audio_file)
     
-    # Verify files exist
     if not verify_files_exist(audio_file, txt_file):
         return None
     
@@ -435,7 +466,7 @@ def slice_audio_from_labels(audio_file, blocks_dir):
     
     # Parse audio.txt with duration checking
     print(f"{Fore.BLUE}Parsing audio.txt...{Style.RESET_ALL}")
-    slices = parse_audio_txt(txt_file, audio_duration)  # Now txt_file is defined!
+    slices = parse_audio_txt(txt_file, audio_duration)
     
     if not slices:
         print(f"{Fore.YELLOW}⚠️  No valid slices found in audio.txt{Style.RESET_ALL}")
@@ -447,8 +478,8 @@ def slice_audio_from_labels(audio_file, blocks_dir):
     print()
     
     # Get next file numbers from Excel
-    next_m, next_v = get_next_file_numbers(excel_path)
-    print(f"{Fore.BLUE}Next file numbers - m: {next_m}, v: {next_v}{Style.RESET_ALL}")
+    next_m, next_v, next_j = get_next_file_numbers(excel_path)
+    print(f"{Fore.BLUE}Next file numbers - m: {next_m}, v: {next_v}, j: {next_j}{Style.RESET_ALL}")
     print()
     
     # Process each slice
@@ -461,6 +492,9 @@ def slice_audio_from_labels(audio_file, blocks_dir):
         elif slice_info['type'] == 'v':
             file_number = next_v
             next_v += 1
+        elif slice_info['type'] == 'j':
+            file_number = next_j
+            next_j += 1
         else:
             print(f"{Fore.YELLOW}⚠️  Warning: Unknown type '{slice_info['type']}', skipping{Style.RESET_ALL}")
             continue
@@ -480,49 +514,48 @@ def slice_audio_from_labels(audio_file, blocks_dir):
 
 def calculate_slice_density(audio_duration_seconds):
     """Calculate number of slices based on audio duration (~1 per 2 minutes)"""
-    base_slices = audio_duration_seconds / 120  # 1 slice per 2 minutes
-    # Add some variation (80% to 120% of base)
+    base_slices = audio_duration_seconds / 120
     variation = random.uniform(0.8, 1.2)
     num_slices = max(1, int(base_slices * variation))
     return num_slices
 
 def get_next_file_numbers_from_folder(blocks_dir):
-    """Get next file numbers by scanning existing m and v files in folder"""
+    """Get next file numbers by scanning existing m, v, and j files in folder"""
     try:
         if not os.path.exists(blocks_dir):
-            return 1, 1
+            return 1, 1, 1
         
         all_files = os.listdir(blocks_dir)
-        m_files = [f for f in all_files if f.startswith('m') and f[1:].split('.')[0].isdigit()]
-        v_files = [f for f in all_files if f.startswith('v') and f[1:].split('.')[0].isdigit()]
+        m_files = [f for f in all_files if f.startswith('m')]
+        v_files = [f for f in all_files if f.startswith('v')]
+        j_files = [f for f in all_files if f.startswith('j')]
         
         # Extract numbers and find maximums
         m_numbers = [int(f[1:].split('.')[0]) for f in m_files if f[1:].split('.')[0].isdigit()]
         v_numbers = [int(f[1:].split('.')[0]) for f in v_files if f[1:].split('.')[0].isdigit()]
+        j_numbers = [int(f[1:].split('.')[0]) for f in j_files if f[1:].split('.')[0].isdigit()]
         
         next_m = max(m_numbers) + 1 if m_numbers else 1
         next_v = max(v_numbers) + 1 if v_numbers else 1
+        next_j = max(j_numbers) + 1 if j_numbers else 1
         
-        return next_m, next_v
+        return next_m, next_v, next_j
         
     except Exception as e:
         print(f"{Fore.YELLOW}⚠️  Error scanning folder, starting from 1: {e}{Style.RESET_ALL}")
-        return 1, 1
+        return 1, 1, 1
 
 def generate_random_labels(audio_file):
     """Generate random slice positions throughout the audio file with proper density"""
     try:
         print(f"{Fore.BLUE}Loading audio to calculate duration...{Style.RESET_ALL}")
-        # Load audio to get duration
         audio = AudioSegment.from_file(audio_file)
         duration_seconds = len(audio) / 1000
         print(f"{Fore.GREEN}✅ Audio duration: {duration_seconds:.1f} seconds{Style.RESET_ALL}")
         
-        # Calculate appropriate number of slices
         num_slices = calculate_slice_density(duration_seconds)
         print(f"{Fore.BLUE}Calculated {num_slices} slices for {duration_seconds:.1f}s audio{Style.RESET_ALL}")
         
-        # Ensure we don't try to create slices beyond audio length
         max_start_time = duration_seconds - SLICE_SIZE
         if max_start_time <= 0:
             print(f"{Fore.RED}❌ Audio file is too short ({duration_seconds:.1f}s) for {SLICE_SIZE}s slices{Style.RESET_ALL}")
@@ -530,8 +563,7 @@ def generate_random_labels(audio_file):
         
         slices = []
         for i in range(num_slices):
-            # Generate random start time within valid range with some spacing
-            min_spacing = SLICE_SIZE * 1.5  # Ensure slices don't overlap too much
+            min_spacing = SLICE_SIZE * 1.5
             max_attempts = 100
             attempt = 0
             
@@ -539,7 +571,6 @@ def generate_random_labels(audio_file):
                 start_time = random.uniform(0, max_start_time)
                 climax_time = start_time + (SLICE_SIZE / 2)
                 
-                # Check if this slice overlaps significantly with existing slices
                 overlap = False
                 for existing_slice in slices:
                     if abs(existing_slice['climax_time'] - climax_time) < min_spacing:
@@ -550,8 +581,7 @@ def generate_random_labels(audio_file):
                     break
                 attempt += 1
             
-            # Randomly choose between 'm' (music) and 'v' (voice)
-            audio_type = random.choice(['m', 'v'])
+            audio_type = random.choice(['m', 'v', 'j'])
             description = f"random_{audio_type}_{i+1}"
             
             slices.append({
@@ -572,33 +602,25 @@ def generate_random_labels(audio_file):
 def process_audio_slice_mp3(audio, slice_info, output_folder, file_number, origin_file):
     """Process a single audio slice and export as MP3 192kbps with metadata"""
     try:
-        # Convert times to milliseconds
         begin_ms = int(slice_info['slice_begin'] * 1000)
         end_ms = int(slice_info['slice_end'] * 1000)
         
-        # Ensure we don't go beyond audio boundaries
         begin_ms = max(0, begin_ms)
         end_ms = min(len(audio), end_ms)
         
-        # Extract slice
         slice_audio = audio[begin_ms:end_ms]
         
-        # Apply fade in/out (convert seconds to milliseconds)
         fade_duration_ms = int(FADE_DURATION * 1000)
         slice_audio = slice_audio.fade_in(fade_duration_ms).fade_out(fade_duration_ms)
         
-        # Normalize audio
         slice_audio = normalize(slice_audio)
         
-        # Generate unique timestamp-based filename
         timestamp_id = generate_timestamp_id()
         filename = f"{slice_info['type']}{timestamp_id}.mp3"
         output_path = os.path.join(output_folder, filename)
         
-        # Export audio
         slice_audio.export(output_path, format="mp3", bitrate="192k")
         
-        # Write metadata to the MP3 file
         metadata_success = write_audio_metadata(
             output_path, 
             origin_file, 
@@ -627,36 +649,27 @@ def run_random_slicer():
     print(f"Output format: MP3 192kbps{Style.RESET_ALL}")
     print()
     
-    # Select audio file
-    print(f"{Fore.BLUE}Please select the audio file to slice...{Style.RESET_ALL}")
     audio_file = select_audio_file()
-    
     if not audio_file:
         print(f"{Fore.RED}❌ No audio file selected. Exiting.{Style.RESET_ALL}")
         return
     
-    # Generate random slices
-    print(f"{Fore.BLUE}Generating random slices...{Style.RESET_ALL}")
     slices = generate_random_labels(audio_file)
     if not slices:
         return
     
-    # Select output folder
-    print(f"{Fore.BLUE}Please select output folder for slices...{Style.RESET_ALL}")
     blocks_dir = select_output_folder()
-    
     if not blocks_dir:
         print(f"{Fore.RED}❌ No output folder selected. Exiting.{Style.RESET_ALL}")
         return
     
-    # Get next file numbers from existing files in folder
-    next_m, next_v = get_next_file_numbers_from_folder(blocks_dir)
+    next_m, next_v, next_j = get_next_file_numbers_from_folder(blocks_dir)
     excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
     
     print(f"{Fore.GREEN}Audio file: {audio_file}{Style.RESET_ALL}")
     print(f"{Fore.GREEN}Label source: Randomly generated ({len(slices)} slices){Style.RESET_ALL}")
     print(f"{Fore.GREEN}Output directory: {blocks_dir}{Style.RESET_ALL}")
-    print(f"{Fore.GREEN}Starting file numbers - m: {next_m}, v: {next_v}{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}Starting file numbers - m: {next_m}, v: {next_v}, j: {next_j}{Style.RESET_ALL}")
     print()
     
     print(f"{Fore.GREEN}Found {len(slices)} slices to process{Style.RESET_ALL}")
@@ -664,7 +677,6 @@ def run_random_slicer():
         print(f"  {i}. {slice_info['type']} at {slice_info['climax_time']:.1f}s: {slice_info['description']}")
     print()
     
-    # Load audio file
     print(f"{Fore.BLUE}Loading audio file...{Style.RESET_ALL}")
     try:
         audio = AudioSegment.from_file(audio_file)
@@ -673,95 +685,121 @@ def run_random_slicer():
         print(f"{Fore.RED}❌ Error loading audio file: {e}{Style.RESET_ALL}")
         return
     
-    # Process each slice
     print(f"\n{Fore.CYAN}Processing slices...{Style.RESET_ALL}")
     for slice_info in slices:
-        # Determine file number based on type
         if slice_info['type'] == 'm':
             file_number = next_m
             next_m += 1
         elif slice_info['type'] == 'v':
             file_number = next_v
             next_v += 1
+        elif slice_info['type'] == 'j':
+            file_number = next_j
+            next_j += 1
         else:
-            print(f"{Fore.YELLOW}⚠️  Warning: Unknown type '{slice_info['type']}', skipping{Style.RESET_ALL}")
             continue
         
-        # Process the slice as MP3
         output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, file_number, audio_file)
         if output_path:
-            # Update Excel file
             update_excel_file(excel_path, slice_info, file_number, output_path, audio_file)
         print()
     
-    # Verify files vs Excel database
     verify_files_vs_excel(blocks_dir, excel_path)
-    
     print(f"{Fore.CYAN}=== Random Audio Slicer Completed ==={Style.RESET_ALL}")
 
 def scan_available_blocks(blocks_dir):
-    """Scan blocks directory for m and v audio files"""
+    """Scan blocks directory for m, v, and j audio files"""
     if not os.path.exists(blocks_dir):
-        return [], []
+        return [], [], []
     
     all_files = os.listdir(blocks_dir)
-    # Look for both WAV and MP3 files
     m_blocks = [f for f in all_files if f.startswith('m') and (f.endswith('.mp3') or f.endswith('.wav'))]
     v_blocks = [f for f in all_files if f.startswith('v') and (f.endswith('.mp3') or f.endswith('.wav'))]
+    j_blocks = [f for f in all_files if f.startswith('j') and (f.endswith('.mp3') or f.endswith('.wav'))]
     
     # Sort by number for consistent ordering before shuffling
-    m_blocks.sort(key=lambda x: int(x[1:].split('.')[0]))
-    v_blocks.sort(key=lambda x: int(x[1:].split('.')[0]))
+    m_blocks.sort(key=lambda x: int(x[1:].split('.')[0]) if x[1:].split('.')[0].isdigit() else 0)
+    v_blocks.sort(key=lambda x: int(x[1:].split('.')[0]) if x[1:].split('.')[0].isdigit() else 0)
+    j_blocks.sort(key=lambda x: int(x[1:].split('.')[0]) if x[1:].split('.')[0].isdigit() else 0)
     
-    return m_blocks, v_blocks  
-  
-def validate_sequence_requirements(m_blocks, v_blocks):
+    return m_blocks, v_blocks, j_blocks
+
+def validate_sequence_requirements(m_blocks, v_blocks, j_blocks):
     """Validate that we have enough blocks for sequencing"""
+    total_voice_jingle = len(v_blocks) + len(j_blocks)
+    
     if len(m_blocks) < 3:
         print(f"{Fore.RED}❌ Not enough music blocks: {len(m_blocks)} found (minimum 3 required){Style.RESET_ALL}")
         return False
-    if len(v_blocks) < 3:
-        print(f"{Fore.RED}❌ Not enough voice blocks: {len(v_blocks)} found (minimum 3 required){Style.RESET_ALL}")
+    if total_voice_jingle < 3:
+        print(f"{Fore.RED}❌ Not enough voice+jingle blocks: {total_voice_jingle} found (minimum 3 required){Style.RESET_ALL}")
         return False
     
-    print(f"{Fore.GREEN}✅ Found {len(m_blocks)} music blocks and {len(v_blocks)} voice blocks{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}✅ Found {len(m_blocks)} music blocks and {total_voice_jingle} voice+jingle blocks{Style.RESET_ALL}")
     return True
 
-def create_random_sequence(m_blocks, v_blocks):
-    """Create random sequences for both channels"""
-    # Shuffle blocks randomly
+def create_voice_sequence(v_blocks, j_blocks):
+    """Create a voice sequence that mixes v and j blocks, starting with a jingle if available"""
+    all_voice_blocks = v_blocks + j_blocks
+    
+    if not all_voice_blocks:
+        return []
+    
+    # Separate jingles for potential first position
+    jingles = [b for b in all_voice_blocks if b.startswith('j')]
+    voice_only = [b for b in all_voice_blocks if b.startswith('v')]
+    
+    # Start with a jingle if available
+    if jingles:
+        first_block = random.choice(jingles)
+        jingles.remove(first_block)
+        remaining_blocks = voice_only + jingles
+        random.shuffle(remaining_blocks)
+        voice_sequence = [first_block] + remaining_blocks
+    else:
+        # No jingles, just shuffle all voice blocks
+        voice_sequence = voice_only.copy()
+        random.shuffle(voice_sequence)
+    
+    return voice_sequence
+
+def create_random_sequence(m_blocks, v_blocks, j_blocks):
+    """Create random sequences for music and mixed voice channels"""
+    # Shuffle music blocks randomly
     random.shuffle(m_blocks)
-    random.shuffle(v_blocks)
+    
+    # Create mixed voice sequence
+    voice_sequence = create_voice_sequence(v_blocks, j_blocks)
     
     # Use the minimum length to determine sequence duration
-    sequence_length = min(len(m_blocks), len(v_blocks))
+    sequence_length = min(len(m_blocks), len(voice_sequence))
     
     # Take only the blocks we'll actually use
     m_sequence = m_blocks[:sequence_length]
-    v_sequence = v_blocks[:sequence_length]
+    voice_sequence = voice_sequence[:sequence_length]
     
     # Show which blocks are used vs skipped
     print(f"{Fore.BLUE}🎵 Sequence Configuration:{Style.RESET_ALL}")
     print(f"{Fore.GREEN}   Using {sequence_length} blocks from each channel{Style.RESET_ALL}")
     
     if len(m_blocks) > sequence_length:
-        print(f"{Fore.YELLOW}   Skipping {len(m_blocks) - sequence_length} music blocks: {m_blocks[sequence_length:]}{Style.RESET_ALL}")
-    if len(v_blocks) > sequence_length:
-        print(f"{Fore.YELLOW}   Skipping {len(v_blocks) - sequence_length} voice blocks: {v_blocks[sequence_length:]}{Style.RESET_ALL}")
+        print(f"{Fore.YELLOW}   Skipping {len(m_blocks) - sequence_length} music blocks{Style.RESET_ALL}")
+    if len(v_blocks) + len(j_blocks) > sequence_length:
+        print(f"{Fore.YELLOW}   Skipping {len(v_blocks) + len(j_blocks) - sequence_length} voice+jingle blocks{Style.RESET_ALL}")
     
-    return m_sequence, v_sequence
+    return m_sequence, voice_sequence
 
-def build_multi_channel_sequence(blocks_dir, m_sequence, v_sequence):
-    """Build the final sequence with 15-second voice channel offset"""
+def build_multi_channel_sequence(blocks_dir, m_sequence, voice_sequence):
+    """Build the final sequence with 15-second music channel offset"""
     try:
         print(f"{Fore.BLUE}🔊 Building audio sequence...{Style.RESET_ALL}")
         
-        # Create 15 seconds of silence for voice channel offset
-        silence_15s = AudioSegment.silent(duration=15000)  # 15 seconds in milliseconds
+        # Create 15 seconds of silence for music channel offset
+        silence_15s = AudioSegment.silent(duration=15000)
         
-        # Initialize channels
-        music_channel = AudioSegment.empty()
-        voice_channel = silence_15s  # Start voice channel with 15s silence
+        # Initialize channels - voice starts immediately, music starts after 15s
+        music_channel = silence_15s
+        voice_channel = AudioSegment.empty()
         
         # Load and concatenate music blocks
         print(f"{Fore.BLUE}   Loading music channel...{Style.RESET_ALL}")
@@ -771,13 +809,14 @@ def build_multi_channel_sequence(blocks_dir, m_sequence, v_sequence):
             music_channel += audio_segment
             print(f"{Fore.GREEN}     [{i}/{len(m_sequence)}] Added: {block}{Style.RESET_ALL}")
         
-        # Load and concatenate voice blocks
+        # Load and concatenate voice blocks (mixed v and j)
         print(f"{Fore.BLUE}   Loading voice channel...{Style.RESET_ALL}")
-        for i, block in enumerate(v_sequence, 1):
+        for i, block in enumerate(voice_sequence, 1):
             block_path = os.path.join(blocks_dir, block)
             audio_segment = AudioSegment.from_file(block_path)
             voice_channel += audio_segment
-            print(f"{Fore.GREEN}     [{i}/{len(v_sequence)}] Added: {block}{Style.RESET_ALL}")
+            block_type = "JINGLE" if block.startswith('j') else "VOICE"
+            print(f"{Fore.GREEN}     [{i}/{len(voice_sequence)}] Added: {block} ({block_type}){Style.RESET_ALL}")
         
         # Ensure both channels are the same length (pad with silence if needed)
         if len(music_channel) > len(voice_channel):
@@ -800,21 +839,17 @@ def run_sequencer():
     """Main sequencing workflow - Option 2"""
     print(f"{Fore.CYAN}=== Audio Sequencer Started ==={Style.RESET_ALL}")
     print(f"{Fore.BLUE}This will create a mixed sequence with:{Style.RESET_ALL}")
-    print(f"{Fore.BLUE}  • Music channel starting at 0:00{Style.RESET_ALL}")
-    print(f"{Fore.BLUE}  • Voice channel starting at 0:15{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}  • Music channel starting at 0:15{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}  • Voice channel starting at 0:00 (mixed voice and jingles){Style.RESET_ALL}")
     print(f"{Fore.BLUE}  • Random block order{Style.RESET_ALL}")
     print(f"{Fore.BLUE}  • Stereo output{Style.RESET_ALL}")
     print()
     
-    # Select blocks directory
-    print(f"{Fore.BLUE}Please select the blocks folder...{Style.RESET_ALL}")
     blocks_dir = filedialog.askdirectory(title="Select Blocks Folder")
-    
     if not blocks_dir:
         print(f"{Fore.RED}❌ No blocks folder selected. Exiting.{Style.RESET_ALL}")
         return
     
-    # Ask for desired duration
     while True:
         try:
             user_input = input(f"{Fore.WHITE}How many minutes of sequenced content? (Enter for all available): {Style.RESET_ALL}").strip()
@@ -829,14 +864,11 @@ def run_sequencer():
         except ValueError:
             print(f"{Fore.RED}❌ Please enter a valid number{Style.RESET_ALL}")
     
-    # Use unified sequencing function
     success, final_audio, blocks_info = create_sequence_from_blocks(blocks_dir, desired_minutes)
     if not success:
         print(f"{Fore.RED}❌ Sequencing failed{Style.RESET_ALL}")
         return
     
-    # Let user choose output location
-    print(f"{Fore.BLUE}Please choose where to save the sequence...{Style.RESET_ALL}")
     output_path = filedialog.asksaveasfilename(
         title="Save Sequence As",
         defaultextension=".mp3",
@@ -847,16 +879,14 @@ def run_sequencer():
         print(f"{Fore.RED}❌ No output file selected. Exiting.{Style.RESET_ALL}")
         return
     
-    # Export final sequence
     try:
         print(f"{Fore.BLUE}Exporting sequence...{Style.RESET_ALL}")
         final_audio.export(output_path, format="mp3", bitrate="192k")
         print(f"{Fore.GREEN}✅ Sequence saved: {output_path}{Style.RESET_ALL}")
         print(f"{Fore.GREEN}🎵 Final duration: {blocks_info['total_duration']:.1f} seconds{Style.RESET_ALL}")
         
-        # Generate timeline file
         generate_sequence_timeline(output_path, blocks_dir, 
-                                 blocks_info['m_sequence'], blocks_info['v_sequence'], 
+                                 blocks_info['m_sequence'], blocks_info['voice_sequence'], 
                                  blocks_info['total_duration'])
         
     except Exception as e:
@@ -869,23 +899,16 @@ def run_slice_and_sequence_with_labels():
     """Run complete workflow: slice audio then sequence the blocks"""
     print(f"{Fore.CYAN}=== Slice & Sequence with Labels ==={Style.RESET_ALL}")
     
-    # 1. Select audio file
-    print(f"{Fore.BLUE}Step 1: Select the source audio file...{Style.RESET_ALL}")
     audio_file = select_audio_file()
-    
     if not audio_file:
         print(f"{Fore.RED}❌ No audio file selected. Exiting.{Style.RESET_ALL}")
         return
     
-    # 2. Select output folder for slices
-    print(f"{Fore.BLUE}Step 2: Select output folder for audio slices...{Style.RESET_ALL}")
     blocks_dir = select_output_folder()
-    
     if not blocks_dir:
         print(f"{Fore.RED}❌ No output folder selected. Exiting.{Style.RESET_ALL}")
         return
     
-    # 3. Slice audio using labels
     print(f"{Fore.BLUE}Step 3: Slicing audio with labels...{Style.RESET_ALL}")
     result_dir = slice_audio_from_labels(audio_file, blocks_dir)
     
@@ -893,20 +916,17 @@ def run_slice_and_sequence_with_labels():
         print(f"{Fore.RED}❌ Audio slicing failed. Exiting.{Style.RESET_ALL}")
         return
     
-    # 4. Scan blocks and ask for desired sequence duration
     print(f"{Fore.BLUE}Step 4: Sequence configuration...{Style.RESET_ALL}")
-
-    # First scan to see what's available
-    m_blocks, v_blocks = scan_available_blocks(blocks_dir)
-    if not validate_sequence_requirements(m_blocks, v_blocks):
+    m_blocks, v_blocks, j_blocks = scan_available_blocks(blocks_dir)
+    
+    if not validate_sequence_requirements(m_blocks, v_blocks, j_blocks):
         print(f"{Fore.RED}❌ Not enough blocks for sequencing{Style.RESET_ALL}")
         return
 
-    # Calculate maximum possible duration
-    max_blocks = min(len(m_blocks), len(v_blocks))
+    max_blocks = min(len(m_blocks), len(v_blocks) + len(j_blocks))
     max_minutes = (max_blocks * 30) / 60
 
-    print(f"{Fore.GREEN}✅ Available: {len(m_blocks)} music + {len(v_blocks)} voice blocks{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}✅ Available: {len(m_blocks)} music + {len(v_blocks)} voice + {len(j_blocks)} jingle blocks{Style.RESET_ALL}")
     print(f"{Fore.GREEN}📊 Maximum sequence: {max_minutes:.1f} minutes{Style.RESET_ALL}")
 
     while True:
@@ -926,17 +946,11 @@ def run_slice_and_sequence_with_labels():
         except ValueError:
             print(f"{Fore.RED}❌ Please enter a valid number{Style.RESET_ALL}")
 
-    # 5. Use unified sequencing function
     success, final_audio, blocks_info = create_sequence_from_blocks(blocks_dir, desired_minutes)
     if not success:
         print(f"{Fore.RED}❌ Sequencing failed{Style.RESET_ALL}")
         return
 
-    # Update variables for the rest of the function
-    m_sequence = blocks_info['m_sequence']
-    v_sequence = blocks_info['v_sequence']
-    # 7. Let user choose output location
-    print(f"{Fore.BLUE}Step 5: Save final sequence...{Style.RESET_ALL}")
     output_path = filedialog.asksaveasfilename(
         title="Save Final Sequence As",
         defaultextension=".mp3",
@@ -947,15 +961,15 @@ def run_slice_and_sequence_with_labels():
         print(f"{Fore.RED}❌ No output file selected. Exiting.{Style.RESET_ALL}")
         return
     
-    # 8. Export final sequence
     try:
         print(f"{Fore.BLUE}Exporting final sequence...{Style.RESET_ALL}")
         final_audio.export(output_path, format="mp3", bitrate="192k")
         print(f"{Fore.GREEN}✅ Final sequence saved: {output_path}{Style.RESET_ALL}")
         print(f"{Fore.GREEN}🎵 Final duration: {blocks_info['total_duration']:.1f} seconds{Style.RESET_ALL}")
-        # Generate timeline file
-        audio_duration = len(final_audio) / 1000
-        generate_sequence_timeline(output_path, blocks_dir, m_sequence, v_sequence, audio_duration)
+        
+        generate_sequence_timeline(output_path, blocks_dir, 
+                                 blocks_info['m_sequence'], blocks_info['voice_sequence'],
+                                 blocks_info['total_duration'])
         
     except Exception as e:
         print(f"{Fore.RED}❌ Error exporting sequence: {e}{Style.RESET_ALL}")
@@ -963,40 +977,35 @@ def run_slice_and_sequence_with_labels():
     
     print(f"{Fore.CYAN}=== Slice & Sequence Workflow Completed ==={Style.RESET_ALL}")
 
-def generate_sequence_timeline(sequence_path, blocks_dir, m_sequence, v_sequence, audio_duration):
+def generate_sequence_timeline(sequence_path, blocks_dir, m_sequence, voice_sequence, audio_duration):
     """Generate a timeline text file for the created sequence"""
     try:
-        # Create txt file path (same name, different extension)
         txt_path = os.path.splitext(sequence_path)[0] + '.txt'
         
-        # Get current timestamp
         from datetime import datetime
         created_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Calculate total duration in MM:SS format
         minutes = int(audio_duration // 60)
         seconds = int(audio_duration % 60)
         duration_str = f"{minutes:02d}:{seconds:02d}"
         
-        # Count blocks by category dynamically
+        # Count blocks by category
         block_counts = {}
-        for block in m_sequence + v_sequence:
-            category = block[0]  # First character: 'm', 'v', etc.
+        for block in m_sequence + voice_sequence:
+            category = block[0]
             block_counts[category] = block_counts.get(category, 0) + 1
         
-        # Create blocks used string
         blocks_used = ", ".join([f"{cat}={count}" for cat, count in sorted(block_counts.items())])
         
         # Initialize metadata dictionaries
         descriptions = {}
         origins = {}
         
-        # Read metadata from Excel first, then fall back to MP3 metadata
         excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
         
         # Try to read from Excel first
         try:
-            for category in block_counts.keys():
+            for category in ['m', 'v', 'j']:
                 try:
                     df = pd.read_excel(excel_path, sheet_name=category)
                     if not df.empty and category in df.columns:
@@ -1012,35 +1021,30 @@ def generate_sequence_timeline(sequence_path, blocks_dir, m_sequence, v_sequence
         except Exception as e:
             print(f"{Fore.YELLOW}⚠️  Could not read Excel for metadata: {e}{Style.RESET_ALL}")
         
-        # Fall back to MP3 metadata for any files still missing descriptions or origins
-        for block in m_sequence + v_sequence:
+        # Fall back to MP3 metadata
+        for block in m_sequence + voice_sequence:
             block_name = os.path.splitext(block)[0]
             
-            # Check if we need to get metadata from MP3
             if (block_name not in descriptions or 
                 descriptions.get(block_name) == 'No description' or
                 block_name not in origins or 
                 origins.get(block_name) == 'Unknown origin'):
                 
-                # Try to read from MP3 metadata
                 mp3_path = os.path.join(blocks_dir, block)
                 if os.path.exists(mp3_path):
                     metadata = read_audio_metadata(mp3_path)
                     if metadata:
                         if metadata.get('description'):
                             descriptions[block_name] = metadata['description']
-                            print(f"{Fore.BLUE}   📝 Read description from MP3: {block} -> '{metadata['description']}'{Style.RESET_ALL}")
                         if metadata.get('origin'):
                             origins[block_name] = metadata['origin']
-                            print(f"{Fore.BLUE}   📁 Read origin from MP3: {block} -> '{metadata['origin']}'{Style.RESET_ALL}")
         
-        # Build timeline entries with interleaved music and voice
+        # Build timeline entries
         timeline_entries = []
         
-        # Calculate start times for each block
         for i in range(len(m_sequence)):
-            # Music block start time
-            music_time = i * 30
+            # Music block start time (delayed by 15 seconds)
+            music_time = (i * 30) + 15
             music_minutes = music_time // 60
             music_seconds = music_time % 60
             music_time_str = f"{music_minutes:02d}:{music_seconds:02d}"
@@ -1055,27 +1059,30 @@ def generate_sequence_timeline(sequence_path, blocks_dir, m_sequence, v_sequence
                 'time_str': music_time_str,
                 'block': music_name,
                 'description': music_desc,
-                'origin': music_origin
+                'origin': music_origin,
+                'type': 'music'
             })
             
-            # Voice block start time (15 seconds after corresponding music)
-            if i < len(v_sequence):
-                voice_time = (i * 30) + 15
+            # Voice/jingle block start time (starts immediately)
+            if i < len(voice_sequence):
+                voice_time = i * 30
                 voice_minutes = voice_time // 60
                 voice_seconds = voice_time % 60
                 voice_time_str = f"{voice_minutes:02d}:{voice_seconds:02d}"
                 
-                voice_block = v_sequence[i]
+                voice_block = voice_sequence[i]
                 voice_name = os.path.splitext(voice_block)[0]
                 voice_desc = descriptions.get(voice_name, 'No description')
                 voice_origin = origins.get(voice_name, 'Unknown origin')
+                voice_type = "jingle" if voice_block.startswith('j') else "voice"
                 
                 timeline_entries.append({
                     'time': voice_time,
                     'time_str': voice_time_str,
                     'block': voice_name,
                     'description': voice_desc,
-                    'origin': voice_origin
+                    'origin': voice_origin,
+                    'type': voice_type
                 })
         
         # Sort all entries by time
@@ -1090,58 +1097,32 @@ def generate_sequence_timeline(sequence_path, blocks_dir, m_sequence, v_sequence
             f.write(f"Blocks used: {blocks_used}\n\n")
             
             for entry in timeline_entries:
-                f.write(f"{entry['time_str']} / {entry['block']} / {entry['description']} / {entry['origin']}\n")
+                type_indicator = "[J]" if entry['type'] == 'jingle' else "[V]" if entry['type'] == 'voice' else "[M]"
+                f.write(f"{entry['time_str']} {type_indicator} {entry['block']} - {entry['description']} (from: {entry['origin']})\n")
         
         print(f"{Fore.GREEN}✅ Timeline saved: {txt_path}{Style.RESET_ALL}")
         return True
         
     except Exception as e:
         print(f"{Fore.RED}❌ Error generating timeline: {e}{Style.RESET_ALL}")
-        import traceback
-        print(f"{Fore.RED}Detailed error: {traceback.format_exc()}{Style.RESET_ALL}")
         return False
-           
+
 def calculate_max_possible_minutes(audio_duration_seconds, slice_duration=30, min_spacing=60):
-    """
-    Calculate maximum minutes of content that can be extracted with proper spacing
-    
-    Args:
-        audio_duration_seconds: Total audio duration in seconds
-        slice_duration: Duration of each slice in seconds (default: 30)
-        min_spacing: Minimum spacing between slice centers in seconds (default: 60)
-    
-    Returns:
-        Maximum minutes that can be extracted
-    """
-    # Each slice takes (min_spacing) seconds of "space" in the audio
+    """Calculate maximum minutes of content that can be extracted with proper spacing"""
     max_slices = int(audio_duration_seconds / min_spacing)
-    # Convert slices to minutes (each slice = 0.5 minutes)
     max_minutes = (max_slices * slice_duration) / 60
     return max_minutes
 
 def generate_balanced_random_slices(audio_duration_seconds, total_minutes, slice_duration=30, min_spacing=60):
-    """
-    Generate random slices with 50/50 m/v split and proper spacing
+    """Generate random slices with balanced m/v/j split and proper spacing"""
+    num_slices = int(total_minutes * 2)
     
-    Args:
-        audio_duration_seconds: Audio duration in seconds
-        total_minutes: Total minutes of content requested by user
-        slice_duration: Duration of each slice (default: 30s)
-        min_spacing: Minimum spacing between slices (default: 60s)
+    # Ensure divisible by 3 for balanced distribution
+    if num_slices % 3 != 0:
+        num_slices = ((num_slices // 3) + 1) * 3
     
-    Returns:
-        List of slice dictionaries in the same format as parse_audio_txt()
-    """
-    # Calculate number of slices needed
-    num_slices = int(total_minutes * 2)  # 2 slices per minute (each 30s)
+    num_m = num_v = num_j = num_slices // 3
     
-    # Ensure even number for 50/50 split
-    if num_slices % 2 != 0:
-        num_slices += 1
-    
-    num_m = num_v = num_slices // 2
-    
-    # Calculate safe bounds
     buffer = slice_duration / 2
     safe_start = buffer
     safe_end = audio_duration_seconds - buffer
@@ -1167,20 +1148,25 @@ def generate_balanced_random_slices(audio_duration_seconds, total_minutes, slice
         if slice_info:
             slices.append(slice_info)
     
-    # Sort by time
+    # Generate jingle slices (j)
+    for i in range(num_j):
+        slice_info = _generate_slice_with_spacing(
+            safe_start, safe_end, used_positions, min_spacing,
+            'j', f"Random jingle segment {i+1}", slice_duration
+        )
+        if slice_info:
+            slices.append(slice_info)
+    
     slices.sort(key=lambda x: x['climax_time'])
     return slices
 
 def _generate_slice_with_spacing(safe_start, safe_end, used_positions, min_spacing, slice_type, description, slice_duration):
-    """
-    Helper function to generate a single slice with proper spacing
-    """
+    """Helper function to generate a single slice with proper spacing"""
     max_attempts = 100
     
     for attempt in range(max_attempts):
         center = random.uniform(safe_start, safe_end)
         
-        # Check if this position respects minimum spacing
         too_close = any(abs(center - pos) < min_spacing for pos in used_positions)
         
         if not too_close:
@@ -1193,32 +1179,24 @@ def _generate_slice_with_spacing(safe_start, safe_end, used_positions, min_spaci
                 'slice_end': center + (slice_duration / 2)
             }
     
-    # If we can't find a valid position after max attempts
     print(f"{Fore.YELLOW}⚠️  Could not find valid position for {description} after {max_attempts} attempts{Style.RESET_ALL}")
     return None
 
 def generate_random_slices_and_sequence():
-    """
-    Main Option 3 → Option 2 workflow: 
-    Audio file → Generate random slices → Slice → Sequence
-    """
+    """Option 3 → Option 2 workflow: Audio file → Generate random slices → Slice → Sequence"""
     print(f"{Fore.CYAN}=== Option 3 → Option 2: Random Slice & Sequence ==={Style.RESET_ALL}")
     print(f"{Fore.BLUE}This will:{Style.RESET_ALL}")
     print(f"{Fore.BLUE}  • Generate random slices from your audio{Style.RESET_ALL}")
-    print(f"{Fore.BLUE}  • Create balanced music/voice content{Style.RESET_ALL}")
+    print(f"{Fore.BLUE}  • Create balanced music/voice/jingle content{Style.RESET_ALL}")
     print(f"{Fore.BLUE}  • Automatically sequence the slices{Style.RESET_ALL}")
     print(f"{Fore.BLUE}  • Apply professional audio processing{Style.RESET_ALL}")
     print()
     
-    # 1. Select audio file
-    print(f"{Fore.BLUE}Step 1: Select the source audio file...{Style.RESET_ALL}")
     audio_file = select_audio_file()
-    
     if not audio_file:
         print(f"{Fore.RED}❌ No audio file selected. Exiting.{Style.RESET_ALL}")
         return
     
-    # 2. Load audio to get duration
     print(f"{Fore.BLUE}Loading audio file...{Style.RESET_ALL}")
     try:
         audio = AudioSegment.from_file(audio_file)
@@ -1230,12 +1208,10 @@ def generate_random_slices_and_sequence():
         print(f"{Fore.RED}❌ Error loading audio file: {e}{Style.RESET_ALL}")
         return
     
-    # 3. Calculate and show maximum possible minutes
     max_minutes = calculate_max_possible_minutes(audio_duration_seconds)
     print(f"{Fore.BLUE}Maximum content that can be extracted: {max_minutes:.1f} minutes{Style.RESET_ALL}")
     print()
     
-    # 4. Ask user for desired minutes
     while True:
         try:
             user_input = input(f"{Fore.WHITE}How many minutes of sliced content do you want to generate? (max {max_minutes:.1f}): {Style.RESET_ALL}").strip()
@@ -1254,7 +1230,6 @@ def generate_random_slices_and_sequence():
         except ValueError:
             print(f"{Fore.RED}❌ Please enter a valid number{Style.RESET_ALL}")
     
-    # 5. Generate random slices
     print(f"{Fore.BLUE}Generating {requested_minutes:.1f} minutes of random slices...{Style.RESET_ALL}")
     slices = generate_balanced_random_slices(audio_duration_seconds, requested_minutes)
     
@@ -1265,18 +1240,15 @@ def generate_random_slices_and_sequence():
     num_slices = len(slices)
     num_m = len([s for s in slices if s['type'] == 'm'])
     num_v = len([s for s in slices if s['type'] == 'v'])
+    num_j = len([s for s in slices if s['type'] == 'j'])
     
-    print(f"{Fore.GREEN}✅ Generated {num_slices} slices ({num_m} music, {num_v} voice){Style.RESET_ALL}")
+    print(f"{Fore.GREEN}✅ Generated {num_slices} slices ({num_m} music, {num_v} voice, {num_j} jingles){Style.RESET_ALL}")
     
-    # 6. Select blocks directory for slicing
-    print(f"{Fore.BLUE}Step 2: Select output folder for audio slices...{Style.RESET_ALL}")
     blocks_dir = select_output_folder()
-    
     if not blocks_dir:
         print(f"{Fore.RED}❌ No output folder selected. Exiting.{Style.RESET_ALL}")
         return
     
-    # 7. Create temporary audio.txt file with generated slices
     import tempfile
     temp_txt_path = os.path.join(tempfile.gettempdir(), "random_slices_temp.txt")
     
@@ -1287,59 +1259,44 @@ def generate_random_slices_and_sequence():
         
         print(f"{Fore.GREEN}✅ Created slice definitions{Style.RESET_ALL}")
         
-        # 8. Run the slicing process (reusing your existing function)
         print(f"{Fore.BLUE}Step 3: Slicing audio...{Style.RESET_ALL}")
         
-        # We need to temporarily modify the audio_file to use our temp txt file
-        # Let's create a wrapper that uses our generated slices instead of file reading
         excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
-        next_m, next_v = get_next_file_numbers(excel_path)
+        next_m, next_v, next_j = get_next_file_numbers(excel_path)
         
         print(f"{Fore.GREEN}Audio file: {audio_file}{Style.RESET_ALL}")
         print(f"{Fore.GREEN}Output directory: {blocks_dir}{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}Starting file numbers - m: {next_m}, v: {next_v}{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}Starting file numbers - m: {next_m}, v: {next_v}, j: {next_j}{Style.RESET_ALL}")
         print()
         
-        # Process each slice using your existing logic
         print(f"{Fore.CYAN}Processing slices...{Style.RESET_ALL}")
         for slice_info in slices:
-            # Determine file number based on type
             if slice_info['type'] == 'm':
                 file_number = next_m
                 next_m += 1
             elif slice_info['type'] == 'v':
                 file_number = next_v
                 next_v += 1
+            elif slice_info['type'] == 'j':
+                file_number = next_j
+                next_j += 1
             else:
                 continue
             
-            # Process the slice as MP3 (reuse your existing function)
             output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, file_number, audio_file)
             if output_path:
-                # Update Excel file (reuse your existing function)
                 update_excel_file(excel_path, slice_info, file_number, output_path, audio_file)
             print()
         
-        # Verify files vs Excel database
         verify_files_vs_excel(blocks_dir, excel_path)
-        
         print(f"{Fore.GREEN}✅ Audio slicing completed!{Style.RESET_ALL}")
         
-        # 9. Automatically run sequencing using the unified function
         print(f"{Fore.BLUE}Step 4: Sequencing slices...{Style.RESET_ALL}")
-
-        # Use the unified sequencing function with the desired minutes
         success, final_audio, blocks_info = create_sequence_from_blocks(blocks_dir, requested_minutes)
         if not success:
             print(f"{Fore.YELLOW}⚠️  Sequencing failed, but slicing completed successfully{Style.RESET_ALL}")
             return
 
-        # Update variables for the rest of the function
-        m_sequence = blocks_info['m_sequence']
-        v_sequence = blocks_info['v_sequence']
-
-        # 10. Let user choose sequence output location
-        print(f"{Fore.BLUE}Step 5: Save final sequence...{Style.RESET_ALL}")
         output_path = filedialog.asksaveasfilename(
             title="Save Final Sequence As",
             defaultextension=".mp3",
@@ -1350,21 +1307,17 @@ def generate_random_slices_and_sequence():
             print(f"{Fore.YELLOW}⚠️  No output file selected, but slicing completed successfully{Style.RESET_ALL}")
             return
         
-        # Export final sequence
         final_audio.export(output_path, format="mp3", bitrate="192k")
         print(f"{Fore.GREEN}✅ Final sequence saved: {output_path}{Style.RESET_ALL}")
         print(f"{Fore.GREEN}🎵 Final duration: {len(final_audio)/1000:.1f} seconds{Style.RESET_ALL}")
         
-        # Generate timeline file
-        generate_sequence_timeline(output_path, blocks_dir, m_sequence, v_sequence, blocks_info['total_duration'])
+        generate_sequence_timeline(output_path, blocks_dir, blocks_info['m_sequence'], blocks_info['voice_sequence'], blocks_info['total_duration'])
         
         print(f"{Fore.CYAN}=== Option 3 → Option 2 Workflow Completed ==={Style.RESET_ALL}")
-        # Calculate actual duration created
         actual_minutes = blocks_info['total_duration'] / 60
         print(f"{Fore.GREEN}🎉 Successfully created {actual_minutes:.1f} minutes of sequenced content!{Style.RESET_ALL}")
 
     finally:
-        # Clean up temporary file
         if os.path.exists(temp_txt_path):
             os.remove(temp_txt_path)
 
@@ -1372,23 +1325,16 @@ def run_audio_slicer_with_labels():
     """Run audio slicer with existing label file"""
     print(f"{Fore.CYAN}=== Audio Slicer with Labels ==={Style.RESET_ALL}")
     
-    # Select audio file
-    print(f"{Fore.BLUE}Please select the audio file...{Style.RESET_ALL}")
     audio_file = select_audio_file()
-    
     if not audio_file:
         print(f"{Fore.RED}❌ No audio file selected. Exiting.{Style.RESET_ALL}")
         return
     
-    # Select output folder
-    print(f"{Fore.BLUE}Please select output folder for slices...{Style.RESET_ALL}")
     blocks_dir = select_output_folder()
-    
     if not blocks_dir:
         print(f"{Fore.RED}❌ No output folder selected. Exiting.{Style.RESET_ALL}")
         return
     
-    # Run the slicing process
     result = slice_audio_from_labels(audio_file, blocks_dir)
     if result:
         print(f"{Fore.GREEN}✅ Audio slicing completed successfully!{Style.RESET_ALL}")
@@ -1409,96 +1355,34 @@ def create_sequence_from_blocks(blocks_dir, desired_minutes=None):
     """
     print(f"{Fore.CYAN}=== Creating Audio Sequence ==={Style.RESET_ALL}")
     
-    # Scan for available blocks
     print(f"{Fore.BLUE}Scanning for audio blocks...{Style.RESET_ALL}")
-    m_blocks, v_blocks = scan_available_blocks(blocks_dir)
+    m_blocks, v_blocks, j_blocks = scan_available_blocks(blocks_dir)
     
-    if not validate_sequence_requirements(m_blocks, v_blocks):
+    if not validate_sequence_requirements(m_blocks, v_blocks, j_blocks):
         return False, None, None
     
-    # Calculate how many blocks to use
-    # Calculate how many blocks to use
     if desired_minutes is not None:
-        blocks_needed = int((desired_minutes * 60) / 30)  # 30-second blocks
-        blocks_to_use = min(blocks_needed, len(m_blocks), len(v_blocks))
-        
-        # Calculate actual achievable duration
-        achievable_minutes = (blocks_to_use * 30) / 60
-        
-        if blocks_to_use < blocks_needed:
-            print(f"{Fore.YELLOW}⚠️  Warning: Cannot create {desired_minutes} minutes{Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}   Only {blocks_to_use} blocks available (max {achievable_minutes:.1f} minutes){Style.RESET_ALL}")
-            print(f"{Fore.YELLOW}   Creating {achievable_minutes:.1f} minute sequence instead{Style.RESET_ALL}")
-        else:
-            print(f"{Fore.BLUE}Using {blocks_to_use} blocks from each channel for {desired_minutes} minute sequence{Style.RESET_ALL}")
-    
-    # Create random sequences
-    m_sequence, v_sequence = create_random_sequence(m_blocks, v_blocks)
-    
-    # Trim to desired length if specified
-    if desired_minutes is not None:
-        m_sequence = m_sequence[:blocks_to_use]
-        v_sequence = v_sequence[:blocks_to_use]
-        print(f"{Fore.GREEN}Selected {blocks_to_use} blocks from each channel{Style.RESET_ALL}")
-    
-    # Build the audio sequence
-    final_audio = build_multi_channel_sequence(blocks_dir, m_sequence, v_sequence)
-    if not final_audio:
-        return False, None, None
-    
-    # Prepare return info
-    selected_blocks_info = {
-        'm_sequence': m_sequence,
-        'v_sequence': v_sequence,
-        'blocks_dir': blocks_dir,
-        'total_duration': len(final_audio) / 1000
-    }
-    
-    return True, final_audio, selected_blocks_info
-
-def create_sequence_from_blocks(blocks_dir, desired_minutes=None):
-    """
-    Core sequencing function used by both Option 2 and Option 3.2
-    If desired_minutes is None, use all available blocks
-    Returns: success (bool), final_audio (AudioSegment), selected_blocks_info (dict)
-    """
-    print(f"{Fore.CYAN}=== Creating Audio Sequence ==={Style.RESET_ALL}")
-    
-    # Scan for available blocks
-    print(f"{Fore.BLUE}Scanning for audio blocks...{Style.RESET_ALL}")
-    m_blocks, v_blocks = scan_available_blocks(blocks_dir)
-    
-    if not validate_sequence_requirements(m_blocks, v_blocks):
-        return False, None, None
-    
-    # Calculate how many blocks to use
-    if desired_minutes is not None:
-        blocks_needed = int((desired_minutes * 60) / 30)  # 30-second blocks
-        # Use minimum of available blocks and needed blocks
-        blocks_to_use = min(blocks_needed, len(m_blocks), len(v_blocks))
+        blocks_needed = int((desired_minutes * 60) / 30)
+        blocks_to_use = min(blocks_needed, len(m_blocks), len(v_blocks) + len(j_blocks))
         print(f"{Fore.BLUE}Using {blocks_to_use} blocks from each channel for {desired_minutes} minute sequence{Style.RESET_ALL}")
     else:
-        blocks_to_use = min(len(m_blocks), len(v_blocks))
+        blocks_to_use = min(len(m_blocks), len(v_blocks) + len(j_blocks))
         print(f"{Fore.BLUE}Using all available blocks: {blocks_to_use} from each channel{Style.RESET_ALL}")
     
-    # Create random sequences
-    m_sequence, v_sequence = create_random_sequence(m_blocks, v_blocks)
+    m_sequence, voice_sequence = create_random_sequence(m_blocks, v_blocks, j_blocks)
     
-    # Trim to desired length if specified
     if desired_minutes is not None:
         m_sequence = m_sequence[:blocks_to_use]
-        v_sequence = v_sequence[:blocks_to_use]
+        voice_sequence = voice_sequence[:blocks_to_use]
         print(f"{Fore.GREEN}Selected {blocks_to_use} blocks from each channel{Style.RESET_ALL}")
     
-    # Build the audio sequence
-    final_audio = build_multi_channel_sequence(blocks_dir, m_sequence, v_sequence)
+    final_audio = build_multi_channel_sequence(blocks_dir, m_sequence, voice_sequence)
     if not final_audio:
         return False, None, None
     
-    # Prepare return info
     selected_blocks_info = {
         'm_sequence': m_sequence,
-        'v_sequence': v_sequence,
+        'voice_sequence': voice_sequence,
         'blocks_dir': blocks_dir,
         'total_duration': len(final_audio) / 1000
     }
@@ -1512,15 +1396,12 @@ def write_audio_metadata(file_path, origin, description, audio_type, climax_time
         if audiofile.tag is None:
             audiofile.initTag()
         
-        # Set basic metadata
         audiofile.tag.artist = f"Audio Slicer - {audio_type}"
         audiofile.tag.album = "Audio Blocks"
         audiofile.tag.title = f"{audio_type} block - {description[:50]}"
         
-        # Add comments with our custom data
         audiofile.tag.comments.set(f"Origin: {origin} | Description: {description} | Climax: {climax_time}s | Type: {audio_type}")
 
-        # Use custom user text frames for structured data
         audiofile.tag.user_text_frames.set("ORIGIN_FILE", origin)
         audiofile.tag.user_text_frames.set("DESCRIPTION", description)
         audiofile.tag.user_text_frames.set("AUDIO_TYPE", audio_type)
@@ -1548,9 +1429,7 @@ def read_audio_metadata(file_path):
             'climax_time': None
         }
         
-        # Read from user text frames
         for frame in audiofile.tag.user_text_frames:
-            # The frame.description contains the field name, frame.text contains the value
             if frame.description == "ORIGIN_FILE":
                 metadata['origin'] = frame.text
             elif frame.description == "DESCRIPTION":
@@ -1560,21 +1439,17 @@ def read_audio_metadata(file_path):
             elif frame.description == "CLIMAX_TIME":
                 metadata['climax_time'] = frame.text
         
-        # If we still don't have origin or description, try to parse from the Comment field
         if (not metadata['origin'] or not metadata['description']) and audiofile.tag.comments:
             for comment in audiofile.tag.comments:
                 comment_text = comment.text
-                # Parse the format: "Origin: [path] | Description: [desc] | Climax: [time]s | Type: [type]"
                 if "Origin: " in comment_text and "Description: " in comment_text:
                     try:
                         import re
-                        # Extract origin
                         if not metadata['origin']:
                             origin_match = re.search(r'Origin: ([^|]+)', comment_text)
                             if origin_match:
                                 metadata['origin'] = origin_match.group(1).strip()
                         
-                        # Extract description
                         if not metadata['description']:
                             desc_match = re.search(r'Description: ([^|]+?)(?:\s*\||$)', comment_text)
                             if desc_match:
@@ -1588,7 +1463,7 @@ def read_audio_metadata(file_path):
     except Exception as e:
         print(f"{Fore.RED}❌ Error reading metadata from {file_path}: {e}{Style.RESET_ALL}")
         return None
-           
+
 def verify_audio_metadata(blocks_dir):
     """Verify that all audio files have proper metadata"""
     print(f"\n{Fore.CYAN}=== Verifying Audio File Metadata ==={Style.RESET_ALL}")
@@ -1629,77 +1504,46 @@ def verify_audio_metadata(blocks_dir):
         print(f"{Fore.RED}❌ Error verifying metadata: {e}{Style.RESET_ALL}")
         return False
 
-def debug_metadata(blocks_dir, m_sequence, v_sequence):
-    """Debug function to check what metadata is available in the files"""
-    print(f"{Fore.CYAN}=== Debugging Metadata ==={Style.RESET_ALL}")
-    
-    all_blocks = m_sequence + v_sequence
-    for block in all_blocks:
-        block_path = os.path.join(blocks_dir, block)
-        print(f"\n{Fore.YELLOW}Checking: {block}{Style.RESET_ALL}")
-        
-        # Check if file exists
-        if not os.path.exists(block_path):
-            print(f"{Fore.RED}❌ File does not exist{Style.RESET_ALL}")
-            continue
-            
-        # Try to read with eyed3
-        try:
-            audiofile = eyed3.load(block_path)
-            if audiofile.tag is None:
-                print(f"{Fore.RED}❌ No ID3 tag found{Style.RESET_ALL}")
-                continue
-                
-            print(f"{Fore.GREEN}✅ Has ID3 tag{Style.RESET_ALL}")
-            
-            # Check user text frames
-            print("User Text Frames:")
-            for frame in audiofile.tag.user_text_frames:
-                print(f"  - {frame.description}: {frame.text}")
-            
-            # Check comments
-            print("Comments:")
-            for comment in audiofile.tag.comments:
-                print(f"  - {comment.text}")
-                
-            # Check our specific function
-            metadata = read_audio_metadata(block_path)
-            print(f"Parsed metadata: {metadata}")
-            
-        except Exception as e:
-            print(f"{Fore.RED}❌ Error reading file: {e}{Style.RESET_ALL}")
-
 def main():
-    choice = show_welcome_screen()
-    
-    if choice == '1':
-        slice_choice = show_slice_options_menu()
-        if slice_choice == '1':
-            run_audio_slicer_with_labels()
-        elif slice_choice == '2':
-            no_labels_choice = show_no_labels_menu()
-            if no_labels_choice == '1':
-                print(f"{Fore.GREEN}🎯 Great! Please label your audio file in Audacity...{Style.RESET_ALL}")
-                return
-            elif no_labels_choice == '2':
-                run_random_slicer()
-                return
-                
-    elif choice == '2':
-        run_sequencer()
-        return
+    """Main program entry point"""
+    try:
+        choice = show_welcome_screen()
         
-    elif choice == '3':
-        sub_choice = show_slice_and_sequence_menu()
-        if sub_choice == '1':
-            run_slice_and_sequence_with_labels()
-        elif sub_choice == '2':
-            generate_random_slices_and_sequence()  # NEW: Replace the placeholder
-        return
-        
-    elif choice == '4':
-        show_help()
-        main()
+        if choice == '1':
+            slice_choice = show_slice_options_menu()
+            if slice_choice == '1':
+                run_audio_slicer_with_labels()
+            elif slice_choice == '2':
+                no_labels_choice = show_no_labels_menu()
+                if no_labels_choice == '1':
+                    print(f"{Fore.GREEN}🎯 Great! Please label your audio file in Audacity...{Style.RESET_ALL}")
+                    return
+                elif no_labels_choice == '2':
+                    run_random_slicer()
+                    return
+                    
+        elif choice == '2':
+            run_sequencer()
+            return
+            
+        elif choice == '3':
+            sub_choice = show_slice_and_sequence_menu()
+            if sub_choice == '1':
+                run_slice_and_sequence_with_labels()
+            elif sub_choice == '2':
+                generate_random_slices_and_sequence()
+            return
+            
+        elif choice == '4':
+            show_help()
+            main()
+            
+    except KeyboardInterrupt:
+        print(f"\n{Fore.YELLOW}👋 Program interrupted by user. Goodbye!{Style.RESET_ALL}")
+    except Exception as e:
+        print(f"{Fore.RED}❌ Unexpected error: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     main()
