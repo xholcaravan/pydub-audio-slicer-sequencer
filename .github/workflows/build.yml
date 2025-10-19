@@ -54,14 +54,20 @@ jobs:
   create-release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write  # This fixes the 403 error
     
     steps:
     - name: Download all artifacts
       uses: actions/download-artifact@v4
       
+    - name: List downloaded files
+      run: ls -la
+      
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          AudioSlicer_*
+          AudioSlicer_Linux_x64
+          AudioSlicer_Windows_x64.exe
+          AudioSlicer_macOS_x64
