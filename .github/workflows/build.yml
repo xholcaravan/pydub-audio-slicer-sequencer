@@ -16,10 +16,11 @@ jobs:
             python: '3.10'
             artifact: AudioSlicer_Windows_x64.exe
           - os: macos-latest
-            python: '3.11'  # Use 3.11 for macOS
+            python: '3.11'
             artifact: AudioSlicer_macOS_x64
     
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15  # Increase timeout to 15 minutes
     
     steps:
     - uses: actions/checkout@v4
@@ -35,8 +36,11 @@ jobs:
     - name: Build executable
       run: |
         pyinstaller --onefile slicer.py
-        if [ "${{ matrix.os }}" = "windows-latest" ]; then
-          mv dist/slicer.exe dist/${{ matrix.artifact }}
-        else
-          mv dist/slicer dist/${{ matrix.artifact }}
-        fi
+        
+    - name: Rename Linux/macOS executable
+      if: matrix.os != 'windows-latest'
+      run: mv dist/slicer dist/${{ matrix.artifact }}
+      
+    - name: Rename Windows executable  
+      if: matrix.os == 'windows-latest'
+      run: mv dist/slicer.exe dist/${{ matrix.artifact }}
