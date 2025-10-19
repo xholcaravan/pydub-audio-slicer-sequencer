@@ -20,7 +20,7 @@ jobs:
             artifact: AudioSlicer_macOS_x64
     
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15  # Increase timeout to 15 minutes
+    timeout-minutes: 15
     
     steps:
     - uses: actions/checkout@v4
@@ -44,3 +44,24 @@ jobs:
     - name: Rename Windows executable  
       if: matrix.os == 'windows-latest'
       run: mv dist/slicer.exe dist/${{ matrix.artifact }}
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact }}
+        path: dist/${{ matrix.artifact }}
+
+  create-release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          AudioSlicer_*
