@@ -31,7 +31,14 @@ jobs:
         python-version: ${{ matrix.python }}
     
     - name: Install Python dependencies
-      run: pip install -r requirements.txt pyinstaller
+      run: |
+        pip install --upgrade pip
+        # Use specific compatible versions for macOS
+        if [ "${{ matrix.os }}" = "macos-latest" ]; then
+          pip install numpy==1.24.3 pandas==2.0.3
+        fi
+        pip install -r requirements.txt
+        pip install pyinstaller
     
     - name: Build executable
       run: |
@@ -73,9 +80,6 @@ jobs:
       with:
         name: AudioSlicer_macOS_x64
     
-    - name: List files
-      run: ls -la
-      
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
