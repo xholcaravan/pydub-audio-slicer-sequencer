@@ -26,6 +26,35 @@ A sophisticated Python audio processing tool that automatically slices audio fil
 2. 📂 Extract and run: `./AudioSlicer`
 3. 🔧 Ensure FFmpeg is installed: `sudo apt install ffmpeg`
 
+## 🚀 Quick Start (Executable Version)
+
+### For Linux:
+📥 Download `AudioSlicer_v1.0_Linux_x64.zip`  
+📂 Extract and run: `./AudioSlicer`  
+🔧 Ensure FFmpeg is installed: `sudo apt install ffmpeg`
+
+### For Windows:
+📥 Download `AudioSlicer_v1.0_Windows_x86.exe`  
+🚀 Double-click to run  
+📝 Note: Uses built-in FFmpeg - no additional installation required!
+No Python installation required! 🎉
+## 🚀 Quick Start (Executable Version)
+
+### For Linux:
+📥 Download `AudioSlicer_Linux_x64` from the [latest release](https://github.com/xholcaravan/pydub-audio-slicer-sequencer/releases/latest)  
+🚀 Run: `./AudioSlicer_Linux_x64`  
+🔧 Make executable: `chmod +x AudioSlicer_Linux_x64`
+
+### For Windows:  
+📥 Download `AudioSlicer_Windows_x64.exe` from the [latest release](https://github.com/xholcaravan/pydub-audio-slicer-sequencer/releases/latest)  
+🚀 Double-click to run
+
+### For macOS:
+📥 Download `AudioSlicer_macOS_x64` from the [latest release](https://github.com/xholcaravan/pydub-audio-slicer-sequencer/releases/latest)  
+🚀 Run: `./AudioSlicer_macOS_x64`  
+🔧 Make executable: `chmod +x AudioSlicer_macOS_x64`
+
+No Python installation required! 🎉
 **No Python installation required!** 🎉
 
 ## 🏗️ Project Structure
@@ -34,6 +63,7 @@ Pydub Audio Slicer/
 ├── 🐍 slicer.py # Main processing script
 ├── 📖 README.md # This file
 ├── 🙈 .gitignore # Git exclusion rules
+
 ├── 🎵 raw_audio/ # Input files directory
 │ ├── audio.wav # Source audio file
 │ └── audio.txt # Slice definitions
