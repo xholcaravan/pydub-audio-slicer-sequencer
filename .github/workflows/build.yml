@@ -15,9 +15,12 @@ jobs:
           - os: windows-latest  
             python: '3.10'
             artifact: AudioSlicer_Windows_x64.exe
-          - os: macos-latest
+          - os: macos-13  # Intel Mac
             python: '3.11'
-            artifact: AudioSlicer_macOS_x64
+            artifact: AudioSlicer_macOS_Intel_x64
+          - os: macos-latest  # Apple Silicon Mac
+            python: '3.11'
+            artifact: AudioSlicer_macOS_Apple_Silicon
     
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -70,10 +73,15 @@ jobs:
       with:
         name: AudioSlicer_Windows_x64.exe
       
-    - name: Download macOS artifact
+    - name: Download macOS Intel artifact
       uses: actions/download-artifact@v4
       with:
-        name: AudioSlicer_macOS_x64
+        name: AudioSlicer_macOS_Intel_x64
+      
+    - name: Download macOS Apple Silicon artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: AudioSlicer_macOS_Apple_Silicon
     
     - name: Create Release
       uses: softprops/action-gh-release@v1
@@ -81,4 +89,5 @@ jobs:
         files: |
           AudioSlicer_Linux_x64
           AudioSlicer_Windows_x64.exe
-          AudioSlicer_macOS_x64
+          AudioSlicer_macOS_Intel_x64
+          AudioSlicer_macOS_Apple_Silicon
