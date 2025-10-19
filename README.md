@@ -286,3 +286,11 @@ For issues and questions:
     Ensure proper file formats and directory structure
 
 Audio Slicer with Excel Tracking - Professional audio processing made simple 🎵
+
+## ⚠️ Note about FFmpeg Warning
+When you first run the application, you may see a warning:
+`Couldn't find ffmpeg or avconv - defaulting to ffmpeg, but may not work`
+
+This is **normal and harmless** - the application will use its built-in audio processing.
+The warning does not affect functionality.
+
