@@ -15,10 +15,10 @@ jobs:
           - os: windows-latest  
             python: '3.10'
             artifact: AudioSlicer_Windows_x64.exe
-          - os: macos-13  # Intel Mac
+          - os: macos-13
             python: '3.11'
             artifact: AudioSlicer_macOS_Intel_x64
-          - os: macos-latest  # Apple Silicon Mac
+          - os: macos-latest
             python: '3.11'
             artifact: AudioSlicer_macOS_Apple_Silicon
     
@@ -33,6 +33,14 @@ jobs:
       with:
         python-version: ${{ matrix.python }}
     
+    - name: Install system dependencies
+      run: |
+        if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+        elif [ "${{ matrix.os }}" = "macos-13" ] || [ "${{ matrix.os }}" = "macos-latest" ]; then
+          brew install ffmpeg
+        fi
+    
     - name: Install Python dependencies
       run: |
         pip install --upgrade pip
@@ -40,7 +48,7 @@ jobs:
         pip install pyinstaller
     
     - name: Build executable
-      run: pyinstaller --onefile slicer.py
+      run: pyinstaller --onefile --add-binary="$(which ffmpeg):." --add-binary="$(which ffprobe):." slicer.py
         
     - name: Rename Linux/macOS executable
       if: matrix.os != 'windows-latest'
@@ -63,31 +71,11 @@ jobs:
       contents: write
     
     steps:
-    - name: Download Linux artifact
+    - name: Download all artifacts
       uses: actions/download-artifact@v4
-      with:
-        name: AudioSlicer_Linux_x64
       
-    - name: Download Windows artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: AudioSlicer_Windows_x64.exe
-      
-    - name: Download macOS Intel artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: AudioSlicer_macOS_Intel_x64
-      
-    - name: Download macOS Apple Silicon artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: AudioSlicer_macOS_Apple_Silicon
-    
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          AudioSlicer_Linux_x64
-          AudioSlicer_Windows_x64.exe
-          AudioSlicer_macOS_Intel_x64
-          AudioSlicer_macOS_Apple_Silicon
+          AudioSlicer_*
