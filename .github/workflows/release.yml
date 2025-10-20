@@ -38,13 +38,13 @@ jobs:
     - name: Build
       run: pyinstaller --onefile slicer.py
         
-    - name: Rename output
-      run: |
-        if [ "${{ matrix.os }}" = "windows-latest" ]; then
-          mv dist/slicer.exe dist/${{ matrix.artifact }}
-        else
-          mv dist/slicer dist/${{ matrix.artifact }}
-        fi
+    - name: Rename Linux/macOS
+      if: matrix.os != 'windows-latest'
+      run: mv dist/slicer dist/${{ matrix.artifact }}
+      
+    - name: Rename Windows
+      if: matrix.os == 'windows-latest'
+      run: copy dist\slicer.exe dist\${{ matrix.artifact }}
     
     - name: Upload
       uses: actions/upload-artifact@v4
