@@ -51,3 +51,39 @@ jobs:
       with:
         name: ${{ matrix.artifact }}
         path: dist/${{ matrix.artifact }}
+
+  create-release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Download Linux
+      uses: actions/download-artifact@v4
+      with:
+        name: AudioSlicer_Linux
+      
+    - name: Download Windows
+      uses: actions/download-artifact@v4
+      with:
+        name: AudioSlicer_Windows.exe
+      
+    - name: Download macOS Intel
+      uses: actions/download-artifact@v4
+      with:
+        name: AudioSlicer_macOS_Intel
+      
+    - name: Download macOS Silicon
+      uses: actions/download-artifact@v4
+      with:
+        name: AudioSlicer_macOS_Silicon
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          AudioSlicer_Linux
+          AudioSlicer_Windows.exe
+          AudioSlicer_macOS_Intel
+          AudioSlicer_macOS_Silicon
