@@ -1,0 +1,53 @@
+name: Build Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.10'
+            artifact: AudioSlicer_Linux
+          - os: windows-latest  
+            python: '3.10'
+            artifact: AudioSlicer_Windows.exe
+          - os: macos-13
+            python: '3.11'
+            artifact: AudioSlicer_macOS_Intel
+          - os: macos-latest
+            python: '3.11'
+            artifact: AudioSlicer_macOS_Silicon
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python }}
+    
+    - name: Install dependencies
+      run: pip install -r requirements.txt pyinstaller
+    
+    - name: Build
+      run: pyinstaller --onefile slicer.py
+        
+    - name: Rename output
+      run: |
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          mv dist/slicer.exe dist/${{ matrix.artifact }}
+        else
+          mv dist/slicer dist/${{ matrix.artifact }}
+        fi
+    
+    - name: Upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact }}
+        path: dist/${{ matrix.artifact }}
