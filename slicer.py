@@ -109,29 +109,7 @@ def parse_audio_txt(file_path, audio_duration=None):
     
     return slices
 
-def get_next_file_numbers(excel_path):
-    """Get the next file numbers for m, v, and j types from Excel file"""
-    try:
-        # Try to read existing Excel file
-        m_df = pd.read_excel(excel_path, sheet_name='m')
-        v_df = pd.read_excel(excel_path, sheet_name='v')
-        j_df = pd.read_excel(excel_path, sheet_name='j')
-        
-        next_m = len(m_df) + 1 if not m_df.empty else 1
-        next_v = len(v_df) + 1 if not v_df.empty else 1
-        next_j = len(j_df) + 1 if not j_df.empty else 1
-        
-    except FileNotFoundError:
-        # If file doesn't exist, start from 1
-        print(f"{Fore.YELLOW}⚠️  blocks_list.xlsx not found, creating new file...{Style.RESET_ALL}")
-        next_m, next_v, next_j = 1, 1, 1
-    except Exception as e:
-        print(f"{Fore.RED}❌ Error reading Excel file: {e}{Style.RESET_ALL}")
-        next_m, next_v, next_j = 1, 1, 1
-    
-    return next_m, next_v, next_j
-
-def update_excel_file(excel_path, slice_info, file_number, output_path, origin_file):
+def update_excel_file(excel_path, slice_info, output_path, origin_file):
     """Update the Excel file with new slice information"""
     try:
         # Generate the same timestamp ID that was used for the filename
@@ -427,10 +405,10 @@ def show_slice_options_menu():
 def show_no_labels_menu():
     """Show options when user doesn't have labels"""
     submenu_text = f"""
-{Fore.CYAN}No Label File Options:{Style.RESET_ALL}
-{Fore.GREEN}1 - I will label my audio file in Audacity{Style.RESET_ALL}
-{Fore.YELLOW}2 - I just want to randomly slice my audio file{Style.RESET_ALL}
-"""
+    {Fore.CYAN}No Label File Options:{Style.RESET_ALL}
+    {Fore.GREEN}1 - I will label my audio file in Audacity{Style.RESET_ALL}
+    {Fore.YELLOW}2 - I just want to randomly slice my audio file{Style.RESET_ALL}
+    """
     print(submenu_text)
     
     while True:
@@ -447,15 +425,10 @@ def slice_audio_from_labels(audio_file, blocks_dir):
     if not verify_files_exist(audio_file, txt_file):
         return None
     
+    # ADD THIS LINE:
     excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
     
     print(f"{Fore.GREEN}Audio file: {audio_file}{Style.RESET_ALL}")
-    print(f"{Fore.GREEN}Text file: {txt_file}{Style.RESET_ALL}")
-    print(f"{Fore.GREEN}Output directory: {blocks_dir}{Style.RESET_ALL}")
-    print()
-    
-    # Load audio file first to get duration
-    print(f"{Fore.BLUE}Loading audio file...{Style.RESET_ALL}")
     try:
         audio = AudioSegment.from_file(audio_file)
         audio_duration = len(audio) / 1000
@@ -477,33 +450,14 @@ def slice_audio_from_labels(audio_file, blocks_dir):
         print(f"  {i}. {slice_info['type']} at {slice_info['climax_time']}s: {slice_info['description']}")
     print()
     
-    # Get next file numbers from Excel
-    next_m, next_v, next_j = get_next_file_numbers(excel_path)
-    print(f"{Fore.BLUE}Next file numbers - m: {next_m}, v: {next_v}, j: {next_j}{Style.RESET_ALL}")
-    print()
-    
     # Process each slice
     print(f"\n{Fore.CYAN}Processing slices...{Style.RESET_ALL}")
-    for slice_info in slices:
-        # Determine file number based on type
-        if slice_info['type'] == 'm':
-            file_number = next_m
-            next_m += 1
-        elif slice_info['type'] == 'v':
-            file_number = next_v
-            next_v += 1
-        elif slice_info['type'] == 'j':
-            file_number = next_j
-            next_j += 1
-        else:
-            print(f"{Fore.YELLOW}⚠️  Warning: Unknown type '{slice_info['type']}', skipping{Style.RESET_ALL}")
-            continue
-        
+    for slice_info in slices:       
         # Process the slice as MP3
-        output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, file_number, audio_file)
+        output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, audio_file)
         if output_path:
             # Update Excel file
-            update_excel_file(excel_path, slice_info, file_number, output_path, audio_file)
+            update_excel_file(excel_path, slice_info, output_path, audio_file)
         print()
     
     # Verify files vs Excel database
@@ -518,32 +472,6 @@ def calculate_slice_density(audio_duration_seconds):
     variation = random.uniform(0.8, 1.2)
     num_slices = max(1, int(base_slices * variation))
     return num_slices
-
-def get_next_file_numbers_from_folder(blocks_dir):
-    """Get next file numbers by scanning existing m, v, and j files in folder"""
-    try:
-        if not os.path.exists(blocks_dir):
-            return 1, 1, 1
-        
-        all_files = os.listdir(blocks_dir)
-        m_files = [f for f in all_files if f.startswith('m')]
-        v_files = [f for f in all_files if f.startswith('v')]
-        j_files = [f for f in all_files if f.startswith('j')]
-        
-        # Extract numbers and find maximums
-        m_numbers = [int(f[1:].split('.')[0]) for f in m_files if f[1:].split('.')[0].isdigit()]
-        v_numbers = [int(f[1:].split('.')[0]) for f in v_files if f[1:].split('.')[0].isdigit()]
-        j_numbers = [int(f[1:].split('.')[0]) for f in j_files if f[1:].split('.')[0].isdigit()]
-        
-        next_m = max(m_numbers) + 1 if m_numbers else 1
-        next_v = max(v_numbers) + 1 if v_numbers else 1
-        next_j = max(j_numbers) + 1 if j_numbers else 1
-        
-        return next_m, next_v, next_j
-        
-    except Exception as e:
-        print(f"{Fore.YELLOW}⚠️  Error scanning folder, starting from 1: {e}{Style.RESET_ALL}")
-        return 1, 1, 1
 
 def generate_random_labels(audio_file):
     """Generate random slice positions throughout the audio file with proper density"""
@@ -599,7 +527,7 @@ def generate_random_labels(audio_file):
         print(f"{Fore.RED}❌ Error generating random labels: {e}{Style.RESET_ALL}")
         return None
 
-def process_audio_slice_mp3(audio, slice_info, output_folder, file_number, origin_file):
+def process_audio_slice_mp3(audio, slice_info, output_folder, origin_file):
     """Process a single audio slice and export as MP3 192kbps with metadata"""
     try:
         begin_ms = int(slice_info['slice_begin'] * 1000)
@@ -663,13 +591,11 @@ def run_random_slicer():
         print(f"{Fore.RED}❌ No output folder selected. Exiting.{Style.RESET_ALL}")
         return
     
-    next_m, next_v, next_j = get_next_file_numbers_from_folder(blocks_dir)
     excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
     
     print(f"{Fore.GREEN}Audio file: {audio_file}{Style.RESET_ALL}")
     print(f"{Fore.GREEN}Label source: Randomly generated ({len(slices)} slices){Style.RESET_ALL}")
     print(f"{Fore.GREEN}Output directory: {blocks_dir}{Style.RESET_ALL}")
-    print(f"{Fore.GREEN}Starting file numbers - m: {next_m}, v: {next_v}, j: {next_j}{Style.RESET_ALL}")
     print()
     
     print(f"{Fore.GREEN}Found {len(slices)} slices to process{Style.RESET_ALL}")
@@ -687,21 +613,10 @@ def run_random_slicer():
     
     print(f"\n{Fore.CYAN}Processing slices...{Style.RESET_ALL}")
     for slice_info in slices:
-        if slice_info['type'] == 'm':
-            file_number = next_m
-            next_m += 1
-        elif slice_info['type'] == 'v':
-            file_number = next_v
-            next_v += 1
-        elif slice_info['type'] == 'j':
-            file_number = next_j
-            next_j += 1
-        else:
-            continue
         
-        output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, file_number, audio_file)
+        output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, audio_file)
         if output_path:
-            update_excel_file(excel_path, slice_info, file_number, output_path, audio_file)
+            update_excel_file(excel_path, slice_info, output_path, audio_file)
         print()
     
     verify_files_vs_excel(blocks_dir, excel_path)
@@ -850,15 +765,32 @@ def run_sequencer():
         print(f"{Fore.RED}❌ No blocks folder selected. Exiting.{Style.RESET_ALL}")
         return
     
+    # Scan available blocks and calculate maximum minutes
+    print(f"{Fore.BLUE}Scanning for audio blocks...{Style.RESET_ALL}")
+    m_blocks, v_blocks, j_blocks = scan_available_blocks(blocks_dir)
+    
+    if not validate_sequence_requirements(m_blocks, v_blocks, j_blocks):
+        return
+    
+    max_blocks = min(len(m_blocks), len(v_blocks) + len(j_blocks))
+    max_minutes = (max_blocks * 30) / 60
+    
+    print(f"{Fore.GREEN}✅ Found {len(m_blocks)} music blocks and {len(v_blocks) + len(j_blocks)} voice+jingle blocks{Style.RESET_ALL}")
+    print(f"{Fore.GREEN}📊 Maximum sequence: {max_minutes:.1f} minutes{Style.RESET_ALL}")
+    print()
+    
     while True:
         try:
-            user_input = input(f"{Fore.WHITE}How many minutes of sequenced content? (Enter for all available): {Style.RESET_ALL}").strip()
+            user_input = input(f"{Fore.WHITE}How many minutes? (Enter for max {max_minutes:.1f}): {Style.RESET_ALL}").strip()
             if not user_input:
                 desired_minutes = None
                 break
             desired_minutes = float(user_input)
             if desired_minutes <= 0:
                 print(f"{Fore.RED}❌ Please enter a positive number{Style.RESET_ALL}")
+                continue
+            if desired_minutes > max_minutes:
+                print(f"{Fore.RED}❌ Cannot create {desired_minutes:.1f} minutes. Maximum possible is {max_minutes:.1f} minutes{Style.RESET_ALL}")
                 continue
             break
         except ValueError:
@@ -1249,6 +1181,8 @@ def generate_random_slices_and_sequence():
         print(f"{Fore.RED}❌ No output folder selected. Exiting.{Style.RESET_ALL}")
         return
     
+    excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
+
     import tempfile
     temp_txt_path = os.path.join(tempfile.gettempdir(), "random_slices_temp.txt")
     
@@ -1260,32 +1194,18 @@ def generate_random_slices_and_sequence():
         print(f"{Fore.GREEN}✅ Created slice definitions{Style.RESET_ALL}")
         
         print(f"{Fore.BLUE}Step 3: Slicing audio...{Style.RESET_ALL}")
-        
-        excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
-        next_m, next_v, next_j = get_next_file_numbers(excel_path)
-        
+                
         print(f"{Fore.GREEN}Audio file: {audio_file}{Style.RESET_ALL}")
         print(f"{Fore.GREEN}Output directory: {blocks_dir}{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}Starting file numbers - m: {next_m}, v: {next_v}, j: {next_j}{Style.RESET_ALL}")
         print()
         
         print(f"{Fore.CYAN}Processing slices...{Style.RESET_ALL}")
         for slice_info in slices:
-            if slice_info['type'] == 'm':
-                file_number = next_m
-                next_m += 1
-            elif slice_info['type'] == 'v':
-                file_number = next_v
-                next_v += 1
-            elif slice_info['type'] == 'j':
-                file_number = next_j
-                next_j += 1
-            else:
-                continue
+
             
-            output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, file_number, audio_file)
+            output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, audio_file)
             if output_path:
-                update_excel_file(excel_path, slice_info, file_number, output_path, audio_file)
+                update_excel_file(excel_path, slice_info, output_path, audio_file)
             print()
         
         verify_files_vs_excel(blocks_dir, excel_path)
