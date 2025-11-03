@@ -318,6 +318,86 @@ def select_output_folder():
     root.destroy()
     return output_folder
 
+def check_for_corrupted_files(blocks_dir, file_list):
+    """Check if any files in the list are corrupted and return valid files"""
+    valid_files = []
+    problematic_files = []
+    
+    for filename in file_list:
+        file_path = os.path.join(blocks_dir, filename)
+        if not os.path.exists(file_path):
+            problematic_files.append((filename, "File not found"))
+            continue
+            
+        try:
+            # Method 1: Try with pydub using specific codec
+            try:
+                audio = AudioSegment.from_file(file_path, format="mp3")
+                if len(audio) == 0:
+                    problematic_files.append((filename, "Empty audio file (pydub)"))
+                else:
+                    valid_files.append(filename)
+                    continue
+            except Exception as e1:
+                # Method 2: Try with different format parameter
+                try:
+                    audio = AudioSegment.from_file(file_path)
+                    if len(audio) == 0:
+                        problematic_files.append((filename, "Empty audio file (pydub auto)"))
+                    else:
+                        valid_files.append(filename)
+                        continue
+                except Exception as e2:
+                    # Method 3: Try using eyed3 to check if it's a valid MP3
+                    try:
+                        audiofile = eyed3.load(file_path)
+                        if audiofile is None:
+                            problematic_files.append((filename, "Not a valid MP3 file"))
+                        elif audiofile.info is None:
+                            problematic_files.append((filename, "MP3 file has no audio info"))
+                        else:
+                            # File seems valid but pydub can't read it - check for false video detection
+                            if _is_false_video_detection(file_path):
+                                problematic_files.append((filename, "False video detection by FFmpeg"))
+                            else:
+                                problematic_files.append((filename, f"Pydub incompatible: {str(e1)}"))
+                    except Exception as e3:
+                        problematic_files.append((filename, f"All methods failed: pydub1:{e1}, pydub2:{e2}, eyed3:{e3}"))
+                        
+        except Exception as e:
+            problematic_files.append((filename, f"Unexpected error: {e}"))
+    
+    return valid_files, problematic_files
+
+def _is_false_video_detection(file_path):
+    """Check if FFmpeg is falsely detecting audio as video"""
+    try:
+        import subprocess
+        # Use ffprobe to check what FFmpeg thinks the file is
+        cmd = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_streams', file_path]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            import json
+            probe_data = json.loads(result.stdout)
+            
+            if 'streams' in probe_data:
+                for stream in probe_data['streams']:
+                    if 'codec_type' in stream:
+                        # If FFmpeg detects video in an MP3 file, it's a false positive
+                        if stream['codec_type'] == 'video':
+                            codec_name = stream.get('codec_name', 'unknown')
+                            return f"False video detection (codec: {codec_name})"
+            
+            # Check if there are no audio streams
+            audio_streams = [s for s in probe_data.get('streams', []) if s.get('codec_type') == 'audio']
+            if not audio_streams:
+                return "No audio streams detected"
+                
+        return None
+    except Exception as e:
+        return f"Error checking file: {e}"
+
 def show_welcome_screen():
     """Display welcome message and program description"""
     welcome_text = f"""
@@ -330,16 +410,17 @@ def show_welcome_screen():
 {Fore.GREEN}1 - Slice an audio file into several blocks{Style.RESET_ALL}
 {Fore.BLUE}2 - Sequence blocks to create an audio file{Style.RESET_ALL}  
 {Fore.MAGENTA}3 - Slice an audio file and produce a sequence{Style.RESET_ALL}
-{Fore.YELLOW}4 - Help!{Style.RESET_ALL}
+{Fore.CYAN}4 - Advanced options (Excel management, verification){Style.RESET_ALL}
+{Fore.YELLOW}5 - Help!{Style.RESET_ALL}
 """
     print(welcome_text)
     
     while True:
-        choice = input(f"{Fore.WHITE}Select option (1, 2, 3, or 4): {Style.RESET_ALL}").strip()
-        if choice in ['1', '2', '3', '4']:
+        choice = input(f"{Fore.WHITE}Select option (1-5): {Style.RESET_ALL}").strip()
+        if choice in ['1', '2', '3', '4', '5']:
             return choice
         else:
-            print(f"{Fore.RED}❌ Invalid choice. Please enter 1, 2, 3, or 4.{Style.RESET_ALL}")
+            print(f"{Fore.RED}❌ Invalid choice. Please enter 1-5.{Style.RESET_ALL}")
 
 def show_help():
     """Display help information"""
@@ -465,6 +546,120 @@ def slice_audio_from_labels(audio_file, blocks_dir):
     
     print(f"{Fore.GREEN}✅ Audio slicing completed!{Style.RESET_ALL}")
     return blocks_dir
+
+def diagnose_problematic_file(file_path):
+    """Diagnose why a file can't be loaded and suggest fixes"""
+    print(f"{Fore.CYAN}🔍 Diagnosing problematic file: {os.path.basename(file_path)}{Style.RESET_ALL}")
+    
+    if not os.path.exists(file_path):
+        print(f"{Fore.RED}❌ File does not exist{Style.RESET_ALL}")
+        return False
+    
+    file_size = os.path.getsize(file_path)
+    print(f"{Fore.BLUE}   File size: {file_size} bytes{Style.RESET_ALL}")
+    
+    if file_size == 0:
+        print(f"{Fore.RED}❌ File is empty (0 bytes){Style.RESET_ALL}")
+        return False
+    
+    # Try to get basic file info
+    try:
+        import subprocess
+        result = subprocess.run(['file', file_path], capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"{Fore.BLUE}   File type: {result.stdout.strip()}{Style.RESET_ALL}")
+    except:
+        pass
+    
+    # Check if it's actually an MP3
+    try:
+        audiofile = eyed3.load(file_path)
+        if audiofile:
+            print(f"{Fore.GREEN}   ✅ File is recognized as MP3 by eyed3{Style.RESET_ALL}")
+            if audiofile.tag:
+                print(f"{Fore.BLUE}   📝 Has ID3 tags{Style.RESET_ALL}")
+            if audiofile.info:
+                print(f"{Fore.BLUE}   🎵 Duration: {audiofile.info.time_secs:.2f}s, Bitrate: {audiofile.info.bit_rate[1]} kbps{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.YELLOW}   ⚠️  No audio info available{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.RED}   ❌ Not recognized as MP3 by eyed3{Style.RESET_ALL}")
+    except Exception as e:
+        print(f"{Fore.RED}   ❌ Error with eyed3: {e}{Style.RESET_ALL}")
+    
+    # Try alternative loading methods
+    print(f"{Fore.BLUE}   Testing alternative loading methods...{Style.RESET_ALL}")
+    
+    # Method 1: Try with explicit codec
+    try:
+        audio = AudioSegment.from_file(file_path, format="mp3")
+        print(f"{Fore.GREEN}   ✅ Loads with format='mp3'{Style.RESET_ALL}")
+        return True
+    except Exception as e:
+        print(f"{Fore.YELLOW}   ⚠️  Fails with format='mp3': {e}{Style.RESET_ALL}")
+    
+    # Method 2: Try without format
+    try:
+        audio = AudioSegment.from_file(file_path)
+        print(f"{Fore.GREEN}   ✅ Loads without format parameter{Style.RESET_ALL}")
+        return True
+    except Exception as e:
+        print(f"{Fore.YELLOW}   ⚠️  Fails without format: {e}{Style.RESET_ALL}")
+    
+    # Method 3: Try with ffmpeg directly
+    try:
+        import subprocess
+        # Test if ffmpeg can read the file
+        cmd = ['ffmpeg', '-i', file_path, '-f', 'null', '-']
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"{Fore.GREEN}   ✅ FFmpeg can read the file{Style.RESET_ALL}")
+            return True
+        else:
+            print(f"{Fore.RED}   ❌ FFmpeg cannot read the file{Style.RESET_ALL}")
+            print(f"{Fore.RED}   FFmpeg error: {result.stderr}{Style.RESET_ALL}")
+    except Exception as e:
+        print(f"{Fore.YELLOW}   ⚠️  FFmpeg test failed: {e}{Style.RESET_ALL}")
+    
+    print(f"{Fore.YELLOW}💡 Suggestion: Try re-encoding the file with Audacity or another audio editor{Style.RESET_ALL}")
+    return False
+
+def fix_problematic_file(file_path):
+    """Attempt to fix a problematic MP3 file by re-encoding it"""
+    try:
+        print(f"{Fore.BLUE}🛠️  Attempting to fix: {os.path.basename(file_path)}{Style.RESET_ALL}")
+        
+        # Create a temporary file
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        temp_output = os.path.join(temp_dir, f"fixed_{os.path.basename(file_path)}")
+        
+        # Use FFmpeg to re-encode the file
+        import subprocess
+        cmd = [
+            'ffmpeg', '-y', '-i', file_path,
+            '-c:a', 'libmp3lame', '-b:a', '192k',
+            '-map_metadata', '0',  # Copy metadata
+            temp_output
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0 and os.path.exists(temp_output):
+            # Replace the original file with the fixed one
+            import shutil
+            shutil.move(temp_output, file_path)
+            print(f"{Fore.GREEN}✅ Successfully fixed: {os.path.basename(file_path)}{Style.RESET_ALL}")
+            return True
+        else:
+            print(f"{Fore.RED}❌ Failed to fix: {os.path.basename(file_path)}{Style.RESET_ALL}")
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
+            return False
+            
+    except Exception as e:
+        print(f"{Fore.RED}❌ Error fixing file: {e}{Style.RESET_ALL}")
+        return False
 
 def calculate_slice_density(audio_duration_seconds):
     """Calculate number of slices based on audio duration (~1 per 2 minutes)"""
@@ -691,7 +886,7 @@ def create_random_sequence(m_blocks, v_blocks, j_blocks):
     
     # Take only the blocks we'll actually use
     m_sequence = m_blocks[:sequence_length]
-    voice_sequence = voice_sequence[:sequence_length]
+    voice_sequence_trimmed = voice_sequence[:sequence_length]  # Trim to match length
     
     # Show which blocks are used vs skipped
     print(f"{Fore.BLUE}🎵 Sequence Configuration:{Style.RESET_ALL}")
@@ -702,12 +897,17 @@ def create_random_sequence(m_blocks, v_blocks, j_blocks):
     if len(v_blocks) + len(j_blocks) > sequence_length:
         print(f"{Fore.YELLOW}   Skipping {len(v_blocks) + len(j_blocks) - sequence_length} voice+jingle blocks{Style.RESET_ALL}")
     
-    return m_sequence, voice_sequence
+    return m_sequence, voice_sequence_trimmed
 
 def build_multi_channel_sequence(blocks_dir, m_sequence, voice_sequence):
     """Build the final sequence with 15-second music channel offset"""
     try:
         print(f"{Fore.BLUE}🔊 Building audio sequence...{Style.RESET_ALL}")
+        
+        # Validate sequences have the same length
+        if len(m_sequence) != len(voice_sequence):
+            print(f"{Fore.RED}❌ Error: Music sequence ({len(m_sequence)}) and voice sequence ({len(voice_sequence)}) have different lengths{Style.RESET_ALL}")
+            return None
         
         # Create 15 seconds of silence for music channel offset
         silence_15s = AudioSegment.silent(duration=15000)
@@ -720,6 +920,9 @@ def build_multi_channel_sequence(blocks_dir, m_sequence, voice_sequence):
         print(f"{Fore.BLUE}   Loading music channel...{Style.RESET_ALL}")
         for i, block in enumerate(m_sequence, 1):
             block_path = os.path.join(blocks_dir, block)
+            if not os.path.exists(block_path):
+                print(f"{Fore.RED}❌ Music block not found: {block}{Style.RESET_ALL}")
+                return None
             audio_segment = AudioSegment.from_file(block_path)
             music_channel += audio_segment
             print(f"{Fore.GREEN}     [{i}/{len(m_sequence)}] Added: {block}{Style.RESET_ALL}")
@@ -728,6 +931,9 @@ def build_multi_channel_sequence(blocks_dir, m_sequence, voice_sequence):
         print(f"{Fore.BLUE}   Loading voice channel...{Style.RESET_ALL}")
         for i, block in enumerate(voice_sequence, 1):
             block_path = os.path.join(blocks_dir, block)
+            if not os.path.exists(block_path):
+                print(f"{Fore.RED}❌ Voice block not found: {block}{Style.RESET_ALL}")
+                return None
             audio_segment = AudioSegment.from_file(block_path)
             voice_channel += audio_segment
             block_type = "JINGLE" if block.startswith('j') else "VOICE"
@@ -748,6 +954,8 @@ def build_multi_channel_sequence(blocks_dir, m_sequence, voice_sequence):
         
     except Exception as e:
         print(f"{Fore.RED}❌ Error building sequence: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def run_sequencer():
@@ -1281,6 +1489,58 @@ def create_sequence_from_blocks(blocks_dir, desired_minutes=None):
     if not validate_sequence_requirements(m_blocks, v_blocks, j_blocks):
         return False, None, None
     
+    # Check for problematic files
+    print(f"{Fore.BLUE}Checking audio files...{Style.RESET_ALL}")
+    m_blocks_valid, m_problematic = check_for_corrupted_files(blocks_dir, m_blocks)
+    v_blocks_valid, v_problematic = check_for_corrupted_files(blocks_dir, v_blocks)
+    j_blocks_valid, j_problematic = check_for_corrupted_files(blocks_dir, j_blocks)
+    
+    # Report problematic files and offer to fix them
+    all_problematic = m_problematic + v_problematic + j_problematic
+    if all_problematic:
+        print(f"{Fore.YELLOW}⚠️  Found {len(all_problematic)} files with loading issues:{Style.RESET_ALL}")
+        for filename, error in all_problematic:
+            print(f"   - {filename}: {error}")
+        
+        # Offer to fix problematic files
+        if all_problematic:
+            response = input(f"{Fore.WHITE}Would you like to attempt to fix these files? (y/N): {Style.RESET_ALL}").strip().lower()
+            if response in ['y', 'yes']:
+                fixed_count = 0
+                for filename, error in all_problematic:
+                    file_path = os.path.join(blocks_dir, filename)
+                    if fix_problematic_file(file_path):
+                        fixed_count += 1
+                        # Re-check if the file is now valid
+                        try:
+                            audio = AudioSegment.from_file(file_path)
+                            if len(audio) > 0:
+                                # Add to valid lists based on file prefix
+                                if filename.startswith('m'):
+                                    m_blocks_valid.append(filename)
+                                elif filename.startswith('v'):
+                                    v_blocks_valid.append(filename)
+                                elif filename.startswith('j'):
+                                    j_blocks_valid.append(filename)
+                        except:
+                            pass
+                
+                print(f"{Fore.GREEN}✅ Fixed {fixed_count} files{Style.RESET_ALL}")
+                
+                # Remove fixed files from problematic list
+                all_problematic = [p for p in all_problematic if not any(p[0] in valid_list for valid_list in [m_blocks_valid, v_blocks_valid, j_blocks_valid])]
+    
+    # Use only valid files
+    m_blocks = m_blocks_valid
+    v_blocks = v_blocks_valid
+    j_blocks = j_blocks_valid
+    
+    # Check if we still have enough files
+    if len(m_blocks) < 3 or (len(v_blocks) + len(j_blocks)) < 3:
+        print(f"{Fore.RED}❌ Not enough valid files after filtering. Need at least 3 music and 3 voice+jingle blocks.{Style.RESET_ALL}")
+        print(f"{Fore.RED}   Valid music: {len(m_blocks)}, Valid voice+jingle: {len(v_blocks) + len(j_blocks)}{Style.RESET_ALL}")
+        return False, None, None
+    
     if desired_minutes is not None:
         blocks_needed = int((desired_minutes * 60) / 30)
         blocks_to_use = min(blocks_needed, len(m_blocks), len(v_blocks) + len(j_blocks))
@@ -1424,40 +1684,246 @@ def verify_audio_metadata(blocks_dir):
         print(f"{Fore.RED}❌ Error verifying metadata: {e}{Style.RESET_ALL}")
         return False
 
+# Add this section to the function after scanning files
+def update_excel_from_folder(blocks_dir, excel_path):
+    # ... existing code ...
+    
+    # Remove entries for files that don't exist
+    cleanup_count = 0
+    for sheet_name in ['m', 'v', 'j']:
+        existing_df = existing_data[sheet_name]
+        column_name = sheet_name
+        
+        if not existing_df.empty and column_name in existing_df.columns:
+            # Keep only entries where the file actually exists
+            valid_entries = []
+            for _, row in existing_df.iterrows():
+                filename = f"{row[column_name]}.mp3"
+                if filename in all_blocks:
+                    valid_entries.append(row)
+                else:
+                    cleanup_count += 1
+                    print(f"{Fore.YELLOW}   🗑️  Removing orphaned entry: {filename}{Style.RESET_ALL}")
+            
+            existing_data[sheet_name] = pd.DataFrame(valid_entries)
+    
+    if cleanup_count > 0:
+        print(f"{Fore.GREEN}✅ Cleaned up {cleanup_count} orphaned Excel entries{Style.RESET_ALL}")
+
+def show_advanced_menu():
+    """Show advanced options menu"""
+    advanced_text = f"""
+{Fore.CYAN}Advanced Options:{Style.RESET_ALL}
+{Fore.GREEN}1 - Update Excel from existing blocks folder{Style.RESET_ALL}
+{Fore.BLUE}2 - Verify files vs Excel database{Style.RESET_ALL}
+{Fore.MAGENTA}3 - Verify audio file metadata{Style.RESET_ALL}
+{Fore.YELLOW}4 - Back to main menu{Style.RESET_ALL}
+"""
+    print(advanced_text)
+    
+    while True:
+        choice = input(f"{Fore.WHITE}Select option (1-4): {Style.RESET_ALL}").strip()
+        if choice in ['1', '2', '3', '4']:
+            return choice
+        else:
+            print(f"{Fore.RED}❌ Invalid choice. Please enter 1-4.{Style.RESET_ALL}")
+
+def run_advanced_options():
+    """Run advanced options"""
+    while True:
+        choice = show_advanced_menu()
+        
+        if choice == '1':
+            # Update Excel from folder
+            blocks_dir = filedialog.askdirectory(title="Select Blocks Folder to Scan")
+            if blocks_dir:
+                excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
+                update_excel_from_folder(blocks_dir, excel_path)
+            else:
+                print(f"{Fore.RED}❌ No folder selected{Style.RESET_ALL}")
+                
+        elif choice == '2':
+            # Verify files vs Excel (existing function)
+            blocks_dir = filedialog.askdirectory(title="Select Blocks Folder")
+            if blocks_dir:
+                excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
+                verify_files_vs_excel(blocks_dir, excel_path)
+            else:
+                print(f"{Fore.RED}❌ No folder selected{Style.RESET_ALL}")
+                
+        elif choice == '3':
+            # Verify metadata (existing function)
+            blocks_dir = filedialog.askdirectory(title="Select Blocks Folder")
+            if blocks_dir:
+                verify_audio_metadata(blocks_dir)
+            else:
+                print(f"{Fore.RED}❌ No folder selected{Style.RESET_ALL}")
+                
+        elif choice == '4':
+            break
+        
+        input(f"\n{Fore.WHITE}Press Enter to continue...{Style.RESET_ALL}")
+
+def update_excel_from_folder(blocks_dir, excel_path):
+    """Scan blocks folder and update Excel with all files found"""
+    print(f"{Fore.CYAN}=== Updating Excel from Folder Scan ==={Style.RESET_ALL}")
+    
+    if not os.path.exists(blocks_dir):
+        print(f"{Fore.RED}❌ Blocks directory not found: {blocks_dir}{Style.RESET_ALL}")
+        return False
+    
+    # Scan for audio files
+    m_blocks, v_blocks, j_blocks = scan_available_blocks(blocks_dir)
+    all_blocks = m_blocks + v_blocks + j_blocks
+    
+    if not all_blocks:
+        print(f"{Fore.YELLOW}⚠️  No audio blocks found in {blocks_dir}{Style.RESET_ALL}")
+        return False
+    
+    print(f"{Fore.GREEN}Found {len(all_blocks)} audio files to process{Style.RESET_ALL}")
+    
+    # Create or load Excel file
+    try:
+        # Try to read existing Excel file
+        try:
+            existing_data = {}
+            for sheet_name in ['m', 'v', 'j']:
+                try:
+                    df = pd.read_excel(excel_path, sheet_name=sheet_name)
+                    existing_data[sheet_name] = df
+                except:
+                    existing_data[sheet_name] = pd.DataFrame(columns=[sheet_name, 'origin', 'description'])
+        except FileNotFoundError:
+            # Create new Excel structure
+            existing_data = {
+                'm': pd.DataFrame(columns=['m', 'origin', 'description']),
+                'v': pd.DataFrame(columns=['v', 'origin', 'description']),
+                'j': pd.DataFrame(columns=['j', 'origin', 'description'])
+            }
+        
+        # Process each block file
+        new_entries = {'m': [], 'v': [], 'j': []}
+        updated_count = 0
+        skipped_count = 0
+        
+        for block_file in all_blocks:
+            block_path = os.path.join(blocks_dir, block_file)
+            block_name = os.path.splitext(block_file)[0]  # Remove extension
+            
+            # Determine type from filename prefix
+            block_type = block_file[0]  # 'm', 'v', or 'j'
+            
+            if block_type not in ['m', 'v', 'j']:
+                print(f"{Fore.YELLOW}⚠️  Skipping {block_file}: unknown type prefix{Style.RESET_ALL}")
+                skipped_count += 1
+                continue
+            
+            # Check if already in Excel
+            existing_df = existing_data[block_type]
+            column_name = block_type  # 'm', 'v', or 'j'
+            
+            if not existing_df.empty and column_name in existing_df.columns:
+                if block_name in existing_df[column_name].values:
+                    print(f"{Fore.BLUE}   📋 Already in Excel: {block_file}{Style.RESET_ALL}")
+                    skipped_count += 1
+                    continue
+            
+            # Read metadata from audio file
+            metadata = read_audio_metadata(block_path)
+            
+            if metadata:
+                origin = metadata.get('origin', 'Unknown origin')
+                description = metadata.get('description', 'No description')
+                
+                new_entry = {
+                    column_name: block_name,
+                    'origin': origin,
+                    'description': description
+                }
+                new_entries[block_type].append(new_entry)
+                print(f"{Fore.GREEN}   ✅ Will add: {block_file}{Style.RESET_ALL}")
+                updated_count += 1
+            else:
+                # Create entry with basic info if no metadata
+                new_entry = {
+                    column_name: block_name,
+                    'origin': 'Unknown origin',
+                    'description': 'Imported from folder scan'
+                }
+                new_entries[block_type].append(new_entry)
+                print(f"{Fore.YELLOW}   ⚠️  Adding without metadata: {block_file}{Style.RESET_ALL}")
+                updated_count += 1
+        
+        # Update Excel file
+        if updated_count > 0:
+            with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
+                for sheet_name in ['m', 'v', 'j']:
+                    # Combine existing and new data
+                    existing_df = existing_data[sheet_name]
+                    new_df = pd.DataFrame(new_entries[sheet_name])
+                    
+                    if not new_df.empty:
+                        combined_df = pd.concat([existing_df, new_df], ignore_index=True)
+                    else:
+                        combined_df = existing_df
+                    
+                    # Write to Excel
+                    combined_df.to_excel(writer, sheet_name=sheet_name, index=False)
+            
+            print(f"{Fore.GREEN}✅ Excel updated: {updated_count} new entries added{Style.RESET_ALL}")
+            if skipped_count > 0:
+                print(f"{Fore.BLUE}📋 {skipped_count} entries already existed{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.BLUE}📋 No new entries to add - Excel is already up to date{Style.RESET_ALL}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"{Fore.RED}❌ Error updating Excel: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()
+        return False
+
 def main():
     """Main program entry point"""
     try:
-        choice = show_welcome_screen()
-        
-        if choice == '1':
-            slice_choice = show_slice_options_menu()
-            if slice_choice == '1':
-                run_audio_slicer_with_labels()
-            elif slice_choice == '2':
-                no_labels_choice = show_no_labels_menu()
-                if no_labels_choice == '1':
-                    print(f"{Fore.GREEN}🎯 Great! Please label your audio file in Audacity...{Style.RESET_ALL}")
-                    return
-                elif no_labels_choice == '2':
-                    run_random_slicer()
-                    return
-                    
-        elif choice == '2':
-            run_sequencer()
-            return
+        while True:
+            choice = show_welcome_screen()
             
-        elif choice == '3':
-            sub_choice = show_slice_and_sequence_menu()
-            if sub_choice == '1':
-                run_slice_and_sequence_with_labels()
-            elif sub_choice == '2':
-                generate_random_slices_and_sequence()
-            return
+            if choice == '1':
+                slice_choice = show_slice_options_menu()
+                if slice_choice == '1':
+                    run_audio_slicer_with_labels()
+                elif slice_choice == '2':
+                    no_labels_choice = show_no_labels_menu()
+                    if no_labels_choice == '1':
+                        print(f"{Fore.GREEN}🎯 Great! Please label your audio file in Audacity...{Style.RESET_ALL}")
+                    elif no_labels_choice == '2':
+                        run_random_slicer()
+                
+            elif choice == '2':
+                run_sequencer()
+                
+            elif choice == '3':
+                sub_choice = show_slice_and_sequence_menu()
+                if sub_choice == '1':
+                    run_slice_and_sequence_with_labels()
+                elif sub_choice == '2':
+                    generate_random_slices_and_sequence()
+                
+            elif choice == '4':  # Advanced options
+                run_advanced_options()
+                
+            elif choice == '5':  # Help
+                show_help()
             
-        elif choice == '4':
-            show_help()
-            main()
-            
+            # Ask if user wants to continue or exit
+            print(f"\n{Fore.CYAN}═══════════════════════════════════════════════════{Style.RESET_ALL}")
+            continue_choice = input(f"{Fore.WHITE}Return to main menu? (y/N): {Style.RESET_ALL}").strip().lower()
+            if continue_choice not in ['y', 'yes']:
+                print(f"{Fore.YELLOW}👋 Goodbye!{Style.RESET_ALL}")
+                break
+                
     except KeyboardInterrupt:
         print(f"\n{Fore.YELLOW}👋 Program interrupted by user. Goodbye!{Style.RESET_ALL}")
     except Exception as e:
