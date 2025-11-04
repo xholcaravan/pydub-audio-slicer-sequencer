@@ -1765,7 +1765,7 @@ def run_advanced_options():
         input(f"\n{Fore.WHITE}Press Enter to continue...{Style.RESET_ALL}")
 
 def update_excel_from_folder(blocks_dir, excel_path):
-    """Scan blocks folder and update Excel with all files found"""
+    """Scan blocks folder and update Excel with all files found, removing orphaned entries"""
     print(f"{Fore.CYAN}=== Updating Excel from Folder Scan ==={Style.RESET_ALL}")
     
     if not os.path.exists(blocks_dir):
@@ -1801,7 +1801,29 @@ def update_excel_from_folder(blocks_dir, excel_path):
                 'j': pd.DataFrame(columns=['j', 'origin', 'description'])
             }
         
-        # Process each block file
+        # CLEANUP PHASE: Remove orphaned entries
+        cleanup_count = 0
+        for sheet_name in ['m', 'v', 'j']:
+            existing_df = existing_data[sheet_name]
+            column_name = sheet_name
+            
+            if not existing_df.empty and column_name in existing_df.columns:
+                # Keep only entries where the file actually exists
+                valid_entries = []
+                for _, row in existing_df.iterrows():
+                    filename = f"{row[column_name]}.mp3"
+                    if filename in all_blocks:
+                        valid_entries.append(row)
+                    else:
+                        cleanup_count += 1
+                        print(f"{Fore.YELLOW}   🗑️  Removing orphaned entry: {filename}{Style.RESET_ALL}")
+                
+                existing_data[sheet_name] = pd.DataFrame(valid_entries)
+        
+        if cleanup_count > 0:
+            print(f"{Fore.GREEN}✅ Cleaned up {cleanup_count} orphaned Excel entries{Style.RESET_ALL}")
+        
+        # ADDITION PHASE: Add new files
         new_entries = {'m': [], 'v': [], 'j': []}
         updated_count = 0
         skipped_count = 0
@@ -1818,7 +1840,7 @@ def update_excel_from_folder(blocks_dir, excel_path):
                 skipped_count += 1
                 continue
             
-            # Check if already in Excel
+            # Check if already in Excel (after cleanup)
             existing_df = existing_data[block_type]
             column_name = block_type  # 'm', 'v', or 'j'
             
@@ -1855,7 +1877,7 @@ def update_excel_from_folder(blocks_dir, excel_path):
                 updated_count += 1
         
         # Update Excel file
-        if updated_count > 0:
+        if updated_count > 0 or cleanup_count > 0:
             with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
                 for sheet_name in ['m', 'v', 'j']:
                     # Combine existing and new data
@@ -1870,11 +1892,12 @@ def update_excel_from_folder(blocks_dir, excel_path):
                     # Write to Excel
                     combined_df.to_excel(writer, sheet_name=sheet_name, index=False)
             
-            print(f"{Fore.GREEN}✅ Excel updated: {updated_count} new entries added{Style.RESET_ALL}")
-            if skipped_count > 0:
-                print(f"{Fore.BLUE}📋 {skipped_count} entries already existed{Style.RESET_ALL}")
+            if updated_count > 0:
+                print(f"{Fore.GREEN}✅ Excel updated: {updated_count} new entries added{Style.RESET_ALL}")
+            if cleanup_count > 0:
+                print(f"{Fore.GREEN}🗑️  Excel cleaned: {cleanup_count} orphaned entries removed{Style.RESET_ALL}")
         else:
-            print(f"{Fore.BLUE}📋 No new entries to add - Excel is already up to date{Style.RESET_ALL}")
+            print(f"{Fore.BLUE}📋 No changes needed - Excel is already synchronized with folder{Style.RESET_ALL}")
         
         return True
         
