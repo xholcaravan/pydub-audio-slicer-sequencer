@@ -15,6 +15,7 @@ from colorama import Fore, Back, Style, init
 import random
 import eyed3
 from eyed3.id3.frames import ImageFrame
+import json
 # Initialize colorama (this makes colors work on Windows too)
 init()
 
@@ -31,24 +32,148 @@ def get_base_path():
         base_path = os.path.dirname(os.path.abspath(__file__))
     return base_path
 
-# Hardcoded parameters
-SLICE_SIZE = 30  # seconds
-FADE_DURATION = SLICE_SIZE / 2  # seconds
+# ============================================================================
+# FOLDER MEMORY SYSTEM
+# ============================================================================
+
+def load_settings():
+    """Load settings from settings.json in script directory"""
+    settings_path = os.path.join(get_base_path(), 'slicer_settings.json')
+    
+    if os.path.exists(settings_path):
+        try:
+            with open(settings_path, 'r', encoding='utf-8') as f:
+                settings = json.load(f)
+                last_parent_folder = settings.get('last_parent_folder', '')
+                print(f"{Fore.BLUE}📁 Loaded last parent folder: {last_parent_folder}{Style.RESET_ALL}")
+                return last_parent_folder
+        except Exception as e:
+            print(f"{Fore.YELLOW}⚠️ Could not load settings: {e}{Style.RESET_ALL}")
+            return ""
+    else:
+        print(f"{Fore.BLUE}⚙️ First run - no settings file found{Style.RESET_ALL}")
+        return ""
+
+def save_settings(last_parent_folder):
+    """Save last parent folder to settings.json in script directory"""
+    settings_path = os.path.join(get_base_path(), 'slicer_settings.json')
+    
+    try:
+        settings = {
+            'last_parent_folder': last_parent_folder
+        }
+        
+        with open(settings_path, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, indent=2)
+        
+        print(f"{Fore.BLUE}💾 Saved parent folder: {last_parent_folder}{Style.RESET_ALL}")
+    except Exception as e:
+        print(f"{Fore.YELLOW}⚠️ Could not save settings: {e}{Style.RESET_ALL}")
+
+def update_parent_folder(selected_path):
+    """Update the parent folder in settings based on selected file/folder"""
+    if selected_path:
+        parent_folder = os.path.dirname(selected_path)
+        save_settings(parent_folder)
+        return parent_folder
+    return None
+
+def get_initial_directory():
+    """Get the initial directory for file/folder dialogs"""
+    last_parent = load_settings()
+    if last_parent and os.path.exists(last_parent):
+        return last_parent
+    return os.path.expanduser("~")  # Fallback to home directory
+
+# ============================================================================
+# MODIFIED DIALOG FUNCTIONS WITH MEMORY
+# ============================================================================
 
 def select_audio_file():
     """Let user select audio file and return its path"""
     root = tk.Tk()
     root.withdraw()
     
+    initial_dir = get_initial_directory()
+    
     audio_file = filedialog.askopenfilename(
         title="Select Audio File",
+        initialdir=initial_dir,
         filetypes=[
             ("Audio files", "*.wav *.mp3 *.flac *.aiff *.aac *.ogg *.m4a"),
             ("All files", "*.*")
         ]
     )
     root.destroy()
+    
+    if audio_file:
+        update_parent_folder(audio_file)
+    
     return audio_file
+
+def select_output_folder():
+    """Let user select output folder for slices"""
+    root = tk.Tk()
+    root.withdraw()
+    
+    initial_dir = get_initial_directory()
+    
+    output_folder = filedialog.askdirectory(
+        title="Select Output Folder for Slices",
+        initialdir=initial_dir
+    )
+    root.destroy()
+    
+    if output_folder:
+        update_parent_folder(output_folder)
+    
+    return output_folder
+
+def select_blocks_folder():
+    """Let user select blocks folder for sequencing"""
+    root = tk.Tk()
+    root.withdraw()
+    
+    initial_dir = get_initial_directory()
+    
+    blocks_folder = filedialog.askdirectory(
+        title="Select Blocks Folder",
+        initialdir=initial_dir
+    )
+    root.destroy()
+    
+    if blocks_folder:
+        update_parent_folder(blocks_folder)
+    
+    return blocks_folder
+
+def ask_save_file(default_ext=".mp3", filetypes=[("MP3 files", "*.mp3"), ("All files", "*.*")]):
+    """Ask user to save a file"""
+    root = tk.Tk()
+    root.withdraw()
+    
+    initial_dir = get_initial_directory()
+    
+    file_path = filedialog.asksaveasfilename(
+        title="Save As",
+        defaultextension=default_ext,
+        initialdir=initial_dir,
+        filetypes=filetypes
+    )
+    root.destroy()
+    
+    if file_path:
+        update_parent_folder(file_path)
+    
+    return file_path
+
+# ============================================================================
+# ORIGINAL FUNCTIONS (with updated dialog calls)
+# ============================================================================
+
+# Hardcoded parameters
+SLICE_SIZE = 30  # seconds
+FADE_DURATION = SLICE_SIZE / 2  # seconds
 
 def parse_audio_txt(file_path, audio_duration=None):
     """Parse the audio.txt file and return list of slices that fit within audio boundaries"""
@@ -309,14 +434,6 @@ def verify_files_exist(audio_file, txt_file):
         return False
     
     return True
-
-def select_output_folder():
-    """Let user select output folder for slices"""
-    root = tk.Tk()
-    root.withdraw()
-    output_folder = filedialog.askdirectory(title="Select Output Folder for Slices")
-    root.destroy()
-    return output_folder
 
 def check_for_corrupted_files(blocks_dir, file_list):
     """Check if any files in the list are corrupted and return valid files"""
@@ -968,7 +1085,7 @@ def run_sequencer():
     print(f"{Fore.BLUE}  • Stereo output{Style.RESET_ALL}")
     print()
     
-    blocks_dir = filedialog.askdirectory(title="Select Blocks Folder")
+    blocks_dir = select_blocks_folder()
     if not blocks_dir:
         print(f"{Fore.RED}❌ No blocks folder selected. Exiting.{Style.RESET_ALL}")
         return
@@ -1009,11 +1126,7 @@ def run_sequencer():
         print(f"{Fore.RED}❌ Sequencing failed{Style.RESET_ALL}")
         return
     
-    output_path = filedialog.asksaveasfilename(
-        title="Save Sequence As",
-        defaultextension=".mp3",
-        filetypes=[("MP3 files", "*.mp3"), ("All files", "*.*")]
-    )
+    output_path = ask_save_file()
     
     if not output_path:
         print(f"{Fore.RED}❌ No output file selected. Exiting.{Style.RESET_ALL}")
@@ -1091,11 +1204,7 @@ def run_slice_and_sequence_with_labels():
         print(f"{Fore.RED}❌ Sequencing failed{Style.RESET_ALL}")
         return
 
-    output_path = filedialog.asksaveasfilename(
-        title="Save Final Sequence As",
-        defaultextension=".mp3",
-        filetypes=[("MP3 files", "*.mp3"), ("All files", "*.*")]
-    )
+    output_path = ask_save_file()
     
     if not output_path:
         print(f"{Fore.RED}❌ No output file selected. Exiting.{Style.RESET_ALL}")
@@ -1425,11 +1534,7 @@ def generate_random_slices_and_sequence():
             print(f"{Fore.YELLOW}⚠️  Sequencing failed, but slicing completed successfully{Style.RESET_ALL}")
             return
 
-        output_path = filedialog.asksaveasfilename(
-            title="Save Final Sequence As",
-            defaultextension=".mp3",
-            filetypes=[("MP3 files", "*.mp3"), ("All files", "*.*")]
-        )
+        output_path = ask_save_file()
         
         if not output_path:
             print(f"{Fore.YELLOW}⚠️  No output file selected, but slicing completed successfully{Style.RESET_ALL}")
@@ -1735,7 +1840,7 @@ def run_advanced_options():
         
         if choice == '1':
             # Update Excel from folder
-            blocks_dir = filedialog.askdirectory(title="Select Blocks Folder to Scan")
+            blocks_dir = select_blocks_folder()
             if blocks_dir:
                 excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
                 update_excel_from_folder(blocks_dir, excel_path)
@@ -1744,7 +1849,7 @@ def run_advanced_options():
                 
         elif choice == '2':
             # Verify files vs Excel (existing function)
-            blocks_dir = filedialog.askdirectory(title="Select Blocks Folder")
+            blocks_dir = select_blocks_folder()
             if blocks_dir:
                 excel_path = os.path.join(blocks_dir, "blocks_list.xlsx")
                 verify_files_vs_excel(blocks_dir, excel_path)
@@ -1753,7 +1858,7 @@ def run_advanced_options():
                 
         elif choice == '3':
             # Verify metadata (existing function)
-            blocks_dir = filedialog.askdirectory(title="Select Blocks Folder")
+            blocks_dir = select_blocks_folder()
             if blocks_dir:
                 verify_audio_metadata(blocks_dir)
             else:
