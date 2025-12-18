@@ -234,11 +234,10 @@ def parse_audio_txt(file_path, audio_duration=None):
     
     return slices
 
-def update_excel_file(excel_path, slice_info, output_path, origin_file):
+def update_excel_file(excel_path, slice_info, timestamp_id, origin_file):
     """Update the Excel file with new slice information"""
     try:
-        # Generate the same timestamp ID that was used for the filename
-        timestamp_id = generate_timestamp_id()
+        # Use the provided timestamp ID (same one used for filename)
         unique_filename = f"{slice_info['type']}{timestamp_id}"
         
         # Create DataFrames for new entries with correct column order
@@ -653,9 +652,6 @@ def slice_audio_from_labels(audio_file, blocks_dir):
     for slice_info in slices:       
         # Process the slice as MP3
         output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, audio_file)
-        if output_path:
-            # Update Excel file
-            update_excel_file(excel_path, slice_info, output_path, audio_file)
         print()
     
     # Verify files vs Excel database
@@ -927,8 +923,6 @@ def run_random_slicer():
     for slice_info in slices:
         
         output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, audio_file)
-        if output_path:
-            update_excel_file(excel_path, slice_info, output_path, audio_file)
         print()
     
     verify_files_vs_excel(blocks_dir, excel_path)
@@ -1521,8 +1515,6 @@ def generate_random_slices_and_sequence():
 
             
             output_path = process_audio_slice_mp3(audio, slice_info, blocks_dir, audio_file)
-            if output_path:
-                update_excel_file(excel_path, slice_info, output_path, audio_file)
             print()
         
         verify_files_vs_excel(blocks_dir, excel_path)
