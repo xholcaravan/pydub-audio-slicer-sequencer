@@ -1,0 +1,93 @@
+name: Build and Release Executables
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-15]
+        include:
+          - os: ubuntu-latest
+            artifact_name: linux
+          - os: windows-latest
+            artifact_name: windows
+          - os: macos-15
+            artifact_name: macos
+    
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pydub pandas eyed3 colorama openpyxl pyinstaller
+    
+    - name: Build executable
+      run: |
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          pyinstaller --onefile --name AudioSlicerSequencer --add-data "slicer_settings.json;." slicer.py
+        else
+          pyinstaller --onefile --name AudioSlicerSequencer --add-data "slicer_settings.json:." slicer.py
+        fi
+    
+    - name: Prepare artifact
+      run: |
+        if [ "${{ matrix.os }}" == "windows-latest" ]; then
+          cp dist/AudioSlicerSequencer.exe dist/AudioSlicerSequencer_${{ matrix.artifact_name }}.exe
+        else
+          chmod +x dist/AudioSlicerSequencer
+          cp dist/AudioSlicerSequencer dist/AudioSlicerSequencer_${{ matrix.artifact_name }}
+        fi
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: AudioSlicerSequencer-${{ matrix.artifact_name }}
+        path: dist/AudioSlicerSequencer_${{ matrix.artifact_name }}*
+        
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: artifacts
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          artifacts/AudioSlicerSequencer-linux/AudioSlicerSequencer_linux
+          artifacts/AudioSlicerSequencer-windows/AudioSlicerSequencer_windows.exe
+          artifacts/AudioSlicerSequencer-macos/AudioSlicerSequencer_macos
+        tag_name: ${{ github.ref_name }}
+        name: Audio Slicer & Sequencer ${{ github.ref_name }}
+        body: |
+          ## 🎵 Audio Slicer & Sequencer ${{ github.ref_name }}
+          
+          ### What's New
+          - **FIXED**: Timeline calculation bug (music at 0:00, voice at 0:15)
+          - **UPDATED**: All misleading comments corrected
+          - **IMPROVED**: Timeline now matches actual audio output
+          
+          ### 📥 Downloads
+          - **Windows**: [AudioSlicerSequencer_windows.exe](AudioSlicerSequencer_windows.exe)
+          - **macOS**: [AudioSlicerSequencer_macos](AudioSlicerSequencer_macos)
+          - **Linux**: [AudioSlicerSequencer_linux](AudioSlicerSequencer_linux)
+        draft: false
+        prerelease: false
