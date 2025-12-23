@@ -1020,12 +1020,12 @@ def build_multi_channel_sequence(blocks_dir, m_sequence, voice_sequence):
             print(f"{Fore.RED}❌ Error: Music sequence ({len(m_sequence)}) and voice sequence ({len(voice_sequence)}) have different lengths{Style.RESET_ALL}")
             return None
         
-        # Create 15 seconds of silence for music channel offset
+        # Create 15 seconds of silence for voice channel offset
         silence_15s = AudioSegment.silent(duration=15000)
-        
-        # Initialize channels - voice starts immediately, music starts after 15s
-        music_channel = silence_15s
-        voice_channel = AudioSegment.empty()
+
+        # Initialize channels - music starts immediately, voice starts after 15s
+        music_channel = AudioSegment.empty()  # ← Music starts at 0:00
+        voice_channel = silence_15s  # ← Voice starts at 0:15 (after 15s silence)
         
         # Load and concatenate music blocks
         print(f"{Fore.BLUE}   Loading music channel...{Style.RESET_ALL}")
@@ -1287,7 +1287,7 @@ def generate_sequence_timeline(sequence_path, blocks_dir, m_sequence, voice_sequ
         
         for i in range(len(m_sequence)):
             # Music block start time (delayed by 15 seconds)
-            music_time = (i * 30) + 15
+            music_time = (i * 30) + 0
             music_minutes = music_time // 60
             music_seconds = music_time % 60
             music_time_str = f"{music_minutes:02d}:{music_seconds:02d}"
@@ -1308,7 +1308,7 @@ def generate_sequence_timeline(sequence_path, blocks_dir, m_sequence, voice_sequ
             
             # Voice/jingle block start time (starts immediately)
             if i < len(voice_sequence):
-                voice_time = i * 30
+                voice_time = i * 30 + 15
                 voice_minutes = voice_time // 60
                 voice_seconds = voice_time % 60
                 voice_time_str = f"{voice_minutes:02d}:{voice_seconds:02d}"
